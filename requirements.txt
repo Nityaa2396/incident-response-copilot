@@ -1,0 +1,6 @@
+anthropic
+streamlit
+qdrant-client
+python-dotenv
+requests
+pytest
