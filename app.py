@@ -335,3 +335,4 @@ if "report" in st.session_state:
 
 elif run_button and not incident_input.strip():
     st.warning("Please paste an error log or describe the incident first.")
+

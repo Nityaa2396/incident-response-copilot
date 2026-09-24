@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 from anthropic import Anthropic
+from src.config import get_secret
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -74,7 +75,7 @@ def run_diagnostics(
     Run the Diagnostics Agent on a raw error log or incident description.
     Returns structured DiagnosticsResult.
     """
-    client = client or Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = client or Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
     user_message = (
         f"<incident>\n{incident_input.strip()}\n</incident>\n\n"
