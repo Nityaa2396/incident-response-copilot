@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass
 
 from anthropic import Anthropic
+from src.config import get_secret
 from dotenv import load_dotenv
 
 from src.diagnostics_agent import DiagnosticsResult, run_diagnostics
@@ -81,7 +82,7 @@ def run_pipeline(
     Returns:
         IncidentReport with all agent outputs
     """
-    client = client or Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = client or Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
     pipeline_start = time.time()
 
     def update(step_name: str, status: str):
