@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass
 
 from anthropic import Anthropic
+from src.config import get_secret
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -148,7 +149,7 @@ def run_postmortem(
     Returns:
         PostmortemResult with full structured postmortem
     """
-    client = client or Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = client or Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
     # context engineering — postmortem agent gets full picture
     # but we trim fix steps to just the summary to avoid token bloat
