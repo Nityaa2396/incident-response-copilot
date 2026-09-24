@@ -12,6 +12,7 @@ import os
 from dataclasses import asdict, dataclass
 
 from anthropic import Anthropic
+from src.config import get_secret
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -94,7 +95,7 @@ def run_fix_recommendation(
     Returns:
         FixRecommendation with ranked steps and confidence scores
     """
-    client = client or Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    client = client or Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
     # context engineering — only send what the fix agent needs
     # strip prevention and tags from runbooks — not needed for fix steps
