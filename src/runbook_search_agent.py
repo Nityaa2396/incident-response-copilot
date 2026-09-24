@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.config import get_secret
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
@@ -27,8 +28,8 @@ RUNBOOKS_PATH = Path("src/runbooks.json")
 
 def _get_qdrant() -> QdrantClient:
     return QdrantClient(
-        url=os.environ.get("QDRANT_URL"),
-        api_key=os.environ.get("QDRANT_API_KEY"),
+        url=get_secret("QDRANT_URL"),
+        api_key=get_secret("QDRANT_API_KEY"),
     )
 
 
