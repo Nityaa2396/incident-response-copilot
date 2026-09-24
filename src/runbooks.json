@@ -1,0 +1,625 @@
+[
+  {
+    "id": "RB001",
+    "title": "PostgreSQL Connection Refused",
+    "tags": [
+      "database",
+      "postgresql",
+      "connection",
+      "critical"
+    ],
+    "symptoms": [
+      "psycopg2.OperationalError: could not connect to server",
+      "Connection refused on port 5432",
+      "Service failing to connect to PostgreSQL after retries",
+      "Order processing or core service halted"
+    ],
+    "root_causes": [
+      "PostgreSQL process crashed or was OOM-killed",
+      "Database migration in recent deployment caused lock or crash",
+      "Max connections limit reached (check max_connections and pg_stat_activity)",
+      "Firewall rule change blocking port 5432",
+      "pgbouncer connection pool exhausted"
+    ],
+    "resolution_steps": [
+      "1. SSH into db-prod-01 and check PostgreSQL process: `systemctl status postgresql`",
+      "2. Check PostgreSQL logs: `tail -n 100 /var/log/postgresql/postgresql.log`",
+      "3. If process is down, restart: `systemctl restart postgresql`",
+      "4. Check active connections: `SELECT count(*) FROM pg_stat_activity;`",
+      "5. If max connections exceeded, kill idle connections: `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle' AND query_start < NOW() - INTERVAL '5 minutes';`",
+      "6. Check if recent migration caused table locks: `SELECT * FROM pg_locks WHERE granted = false;`",
+      "7. If deployment-related, consider rollback of order-service to previous version",
+      "8. Verify firewall rules: `iptables -L | grep 5432`"
+    ],
+    "prevention": [
+      "Add connection pool monitoring alerts",
+      "Run migrations in separate pipeline before deploying application",
+      "Configure PostgreSQL HA with automatic failover (Patroni or RDS Multi-AZ)",
+      "Set connection timeout and retry with exponential backoff in application"
+    ],
+    "escalation": "If DB cannot be restarted within 10 minutes, page DBA on-call. If data loss suspected, escalate to engineering lead immediately.",
+    "resolution_time_estimate": "15-45 minutes"
+  },
+  {
+    "id": "RB002",
+    "title": "Service OOM Kill / Memory Exhaustion",
+    "tags": [
+      "memory",
+      "oom",
+      "kubernetes",
+      "crash",
+      "high"
+    ],
+    "symptoms": [
+      "OOMKilled in pod status",
+      "Exit code 137",
+      "Service restarting repeatedly",
+      "Memory usage at 100% before crash",
+      "java.lang.OutOfMemoryError in logs"
+    ],
+    "root_causes": [
+      "Memory leak in recent code deployment",
+      "Kubernetes memory limit set too low for current load",
+      "Unbounded cache growing without eviction policy",
+      "Large batch job consuming excessive memory",
+      "N+1 query loading too much data into memory"
+    ],
+    "resolution_steps": [
+      "1. Confirm OOM kill: `kubectl describe pod <pod-name> | grep -A5 'Last State'`",
+      "2. Check current memory limits: `kubectl get pod <pod-name> -o yaml | grep -A4 resources`",
+      "3. Temporary fix — increase memory limit: `kubectl set resources deployment <name> --limits=memory=2Gi`",
+      "4. Check for memory leak — review heap dumps or profiler output from the crashing instance",
+      "5. Identify the largest memory consumers in the recent deployment diff",
+      "6. If batch job is the cause, throttle or reschedule to off-peak hours",
+      "7. Add memory usage alerts at 80% threshold"
+    ],
+    "prevention": [
+      "Set memory requests and limits on all pods",
+      "Add JVM heap size flags (-Xmx) for Java services",
+      "Implement cache size limits with LRU eviction",
+      "Load test before deploying services with significant logic changes"
+    ],
+    "escalation": "If service cannot stabilize after limit increase, escalate to owning team. If production data pipeline is affected, page data engineering lead.",
+    "resolution_time_estimate": "10-30 minutes"
+  },
+  {
+    "id": "RB003",
+    "title": "API Gateway 502 Bad Gateway",
+    "tags": [
+      "api",
+      "gateway",
+      "502",
+      "upstream",
+      "high"
+    ],
+    "symptoms": [
+      "502 Bad Gateway responses from API gateway",
+      "Upstream connect error",
+      "All requests failing at gateway layer",
+      "Health checks failing for upstream service"
+    ],
+    "root_causes": [
+      "Upstream service is down or not responding",
+      "Upstream service taking longer than gateway timeout",
+      "SSL certificate expired on upstream service",
+      "Upstream service returning invalid HTTP response",
+      "Load balancer has no healthy backend instances"
+    ],
+    "resolution_steps": [
+      "1. Check gateway logs for specific upstream error: `kubectl logs -n gateway <gateway-pod>`",
+      "2. Test upstream service directly: `curl -v http://<upstream-service>:<port>/health`",
+      "3. Check upstream service pod status: `kubectl get pods -n <namespace>`",
+      "4. If upstream is down, restart it: `kubectl rollout restart deployment/<upstream-service>`",
+      "5. Check gateway timeout configuration — increase if upstream is slow",
+      "6. Verify SSL certificates: `openssl s_client -connect <host>:443 | grep 'notAfter'`",
+      "7. Check load balancer target group health in AWS console"
+    ],
+    "prevention": [
+      "Set up upstream health check alerts",
+      "Configure circuit breaker pattern on gateway",
+      "Monitor SSL certificate expiry with 30-day advance alerts",
+      "Implement retry logic with exponential backoff at gateway level"
+    ],
+    "escalation": "If upstream cannot be restored within 15 minutes, escalate to owning team and consider enabling maintenance page.",
+    "resolution_time_estimate": "10-25 minutes"
+  },
+  {
+    "id": "RB004",
+    "title": "Redis Cache Connection Failure",
+    "tags": [
+      "redis",
+      "cache",
+      "connection",
+      "timeout",
+      "medium"
+    ],
+    "symptoms": [
+      "redis.exceptions.ConnectionError",
+      "ECONNREFUSED on port 6379",
+      "Cache miss rate spiking to 100%",
+      "Response times increasing significantly",
+      "Timeout errors on cache operations"
+    ],
+    "root_causes": [
+      "Redis instance crashed or was restarted",
+      "Redis memory limit reached causing eviction storm",
+      "Network partition between application and Redis",
+      "Redis connection pool exhausted",
+      "Incorrect Redis URL or credentials after config change"
+    ],
+    "resolution_steps": [
+      "1. Check Redis status: `redis-cli -h <redis-host> ping`",
+      "2. Check Redis logs: `tail -n 50 /var/log/redis/redis-server.log`",
+      "3. Check memory usage: `redis-cli info memory | grep used_memory_human`",
+      "4. If memory full, flush expired keys: `redis-cli --scan --pattern '*' | xargs redis-cli unlink`",
+      "5. Restart Redis if crashed: `systemctl restart redis`",
+      "6. Verify application Redis URL in config matches actual Redis endpoint",
+      "7. Check connection pool settings — reduce max connections if pool exhausted",
+      "8. Confirm application can operate in degraded mode without cache"
+    ],
+    "prevention": [
+      "Set Redis maxmemory-policy to allkeys-lru",
+      "Monitor Redis memory usage with alert at 80%",
+      "Implement graceful cache fallback in application code",
+      "Use Redis Sentinel or Cluster for high availability"
+    ],
+    "escalation": "Redis failure alone is usually not critical if application has cache fallback. Escalate if response times exceed SLA thresholds.",
+    "resolution_time_estimate": "5-20 minutes"
+  },
+  {
+    "id": "RB005",
+    "title": "Kubernetes Pod CrashLoopBackOff",
+    "tags": [
+      "kubernetes",
+      "pod",
+      "crashloop",
+      "deployment",
+      "high"
+    ],
+    "symptoms": [
+      "CrashLoopBackOff in pod status",
+      "Pod restarting repeatedly",
+      "Back-off restarting failed container",
+      "Exit code 1 or non-zero exit codes"
+    ],
+    "root_causes": [
+      "Application startup error due to missing environment variable",
+      "Failed database migration on startup",
+      "Incorrect container image or image pull failure",
+      "Readiness probe misconfigured causing premature kill",
+      "Application crash on startup due to code bug in new deployment"
+    ],
+    "resolution_steps": [
+      "1. Check pod events: `kubectl describe pod <pod-name>`",
+      "2. Check pod logs from previous crashed instance: `kubectl logs <pod-name> --previous`",
+      "3. Check for missing environment variables in pod spec",
+      "4. Verify image exists and is pullable: `kubectl describe pod | grep Image`",
+      "5. If new deployment, rollback immediately: `kubectl rollout undo deployment/<name>`",
+      "6. Check if init containers are failing: `kubectl logs <pod-name> -c <init-container-name>`",
+      "7. Temporarily increase backoff time to read logs before next restart: increase terminationGracePeriodSeconds"
+    ],
+    "prevention": [
+      "Run smoke tests in staging before production deployment",
+      "Validate all required environment variables are set in deployment manifests",
+      "Use readiness and liveness probes correctly",
+      "Implement canary deployments to catch issues before full rollout"
+    ],
+    "escalation": "If rollback does not resolve within 2 restart cycles, escalate to owning team. If all pods in deployment are crashing, declare incident immediately.",
+    "resolution_time_estimate": "5-20 minutes"
+  },
+  {
+    "id": "RB006",
+    "title": "High Database Query Latency / Slow Queries",
+    "tags": [
+      "database",
+      "latency",
+      "slow query",
+      "performance",
+      "medium"
+    ],
+    "symptoms": [
+      "API response times increasing",
+      "Database query time exceeding 1000ms",
+      "Timeout errors from application layer",
+      "High CPU on database server",
+      "pg_stat_activity showing long-running queries"
+    ],
+    "root_causes": [
+      "Missing index on frequently queried column",
+      "N+1 query pattern introduced in recent deployment",
+      "Table lock contention from long-running transaction",
+      "Autovacuum not running causing bloat",
+      "Sudden spike in traffic overwhelming query planner"
+    ],
+    "resolution_steps": [
+      "1. Identify slow queries: `SELECT query, mean_exec_time, calls FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;`",
+      "2. Check for table locks: `SELECT * FROM pg_locks WHERE granted = false;`",
+      "3. Kill blocking queries: `SELECT pg_terminate_backend(<pid>);`",
+      "4. Run EXPLAIN ANALYZE on slow query to identify missing index",
+      "5. Add index if missing: `CREATE INDEX CONCURRENTLY idx_<table>_<column> ON <table>(<column>);`",
+      "6. Check autovacuum status: `SELECT schemaname, tablename, last_autovacuum FROM pg_stat_user_tables;`",
+      "7. Manually trigger vacuum if needed: `VACUUM ANALYZE <table>;`"
+    ],
+    "prevention": [
+      "Set up slow query logging (log_min_duration_statement = 500ms)",
+      "Review EXPLAIN plans for new queries in code review",
+      "Monitor pg_stat_statements in dashboards",
+      "Run load tests against staging with production-size data"
+    ],
+    "escalation": "If latency cannot be reduced within 30 minutes and SLA is breached, escalate to DBA and engineering lead.",
+    "resolution_time_estimate": "20-60 minutes"
+  },
+  {
+    "id": "RB007",
+    "title": "Message Queue Backlog / Consumer Lag",
+    "tags": [
+      "kafka",
+      "queue",
+      "consumer",
+      "lag",
+      "medium"
+    ],
+    "symptoms": [
+      "Consumer group lag increasing",
+      "Messages not being processed",
+      "Queue depth growing continuously",
+      "Downstream services not receiving events",
+      "Kafka consumer offset not advancing"
+    ],
+    "root_causes": [
+      "Consumer service crashed or scaled down",
+      "Consumer throwing exceptions on specific message format",
+      "Consumer processing too slowly — throughput mismatch",
+      "Dead letter queue filling up with poison messages",
+      "Broker connectivity issue from consumer side"
+    ],
+    "resolution_steps": [
+      "1. Check consumer group lag: `kafka-consumer-groups.sh --describe --group <group-name>`",
+      "2. Check consumer service logs for exceptions",
+      "3. If consumer is crashing on a specific message, identify and skip or move to DLQ",
+      "4. Scale up consumer instances: `kubectl scale deployment <consumer> --replicas=5`",
+      "5. Check for poison messages in DLQ and handle accordingly",
+      "6. Verify broker connectivity from consumer pods",
+      "7. If lag is extreme, consider resetting offset to current position to skip backlog (only if messages are non-critical)"
+    ],
+    "prevention": [
+      "Set up consumer lag alerts with threshold-based paging",
+      "Implement dead letter queue for all consumers",
+      "Add idempotency to consumer logic",
+      "Monitor consumer throughput vs producer throughput"
+    ],
+    "escalation": "If lag exceeds 1 hour of messages and consumer cannot recover, escalate to data engineering. If financial or order events are affected, escalate immediately.",
+    "resolution_time_estimate": "15-45 minutes"
+  },
+  {
+    "id": "RB008",
+    "title": "SSL Certificate Expiry",
+    "tags": [
+      "ssl",
+      "certificate",
+      "tls",
+      "expiry",
+      "critical"
+    ],
+    "symptoms": [
+      "SSL handshake failure",
+      "certificate has expired error",
+      "Browser showing security warning",
+      "API clients rejecting connection",
+      "curl: (60) SSL certificate problem"
+    ],
+    "root_causes": [
+      "Certificate renewal not automated",
+      "Auto-renewal failed silently",
+      "Certificate renewed but not deployed",
+      "Wrong certificate deployed to server"
+    ],
+    "resolution_steps": [
+      "1. Confirm expiry: `openssl s_client -connect <domain>:443 2>/dev/null | openssl x509 -noout -dates`",
+      "2. If using Let's Encrypt: `certbot renew --force-renewal`",
+      "3. If using AWS ACM: check certificate status in ACM console and trigger renewal",
+      "4. Redeploy updated certificate to load balancer or web server",
+      "5. Restart nginx/apache if certificate is file-based: `systemctl reload nginx`",
+      "6. Verify fix: `curl -vI https://<domain> 2>&1 | grep 'expire date'`"
+    ],
+    "prevention": [
+      "Set up certificate expiry monitoring with 30-day advance alerts",
+      "Automate certificate renewal with certbot or ACM",
+      "Test renewal process quarterly",
+      "Use wildcard certificates where possible to reduce surface area"
+    ],
+    "escalation": "SSL expiry is a P1 incident if it affects customer-facing endpoints. Escalate to security team and engineering lead immediately.",
+    "resolution_time_estimate": "15-30 minutes"
+  },
+  {
+    "id": "RB009",
+    "title": "Deployment Rollback Procedure",
+    "tags": [
+      "deployment",
+      "rollback",
+      "kubernetes",
+      "release",
+      "high"
+    ],
+    "symptoms": [
+      "Error rate spike immediately after deployment",
+      "Increased latency after new release",
+      "New deployment causing CrashLoopBackOff",
+      "Regression in key metrics post-deploy"
+    ],
+    "root_causes": [
+      "Bug introduced in new code",
+      "Incompatible dependency version",
+      "Database migration incompatible with previous version",
+      "Configuration change causing unexpected behavior"
+    ],
+    "resolution_steps": [
+      "1. Confirm the deployment is the cause by checking timing correlation",
+      "2. Kubernetes rollback: `kubectl rollout undo deployment/<service-name>`",
+      "3. Verify rollback status: `kubectl rollout status deployment/<service-name>`",
+      "4. Check that previous version is running: `kubectl get pods -l app=<service-name>`",
+      "5. If database migration was applied, assess whether it is reversible",
+      "6. Run down migration if safe: `alembic downgrade -1` or equivalent",
+      "7. Notify team of rollback via incident channel",
+      "8. Create post-deployment issue in tracker with reproduction steps"
+    ],
+    "prevention": [
+      "Use canary deployments — route 5% of traffic to new version before full rollout",
+      "Keep migrations backward compatible for at least one release cycle",
+      "Automate rollback trigger based on error rate threshold",
+      "Test rollback procedure in staging monthly"
+    ],
+    "escalation": "If rollback does not restore service within 10 minutes, escalate to engineering lead. If data was modified by the bad deployment, escalate to DBA.",
+    "resolution_time_estimate": "5-15 minutes"
+  },
+  {
+    "id": "RB010",
+    "title": "Third-Party API Timeout / Degradation",
+    "tags": [
+      "third-party",
+      "api",
+      "timeout",
+      "external",
+      "medium"
+    ],
+    "symptoms": [
+      "Timeout errors on external API calls",
+      "Increased response times for features using external service",
+      "HTTP 503 or 504 from third-party endpoint",
+      "Spike in circuit breaker open events"
+    ],
+    "root_causes": [
+      "Third-party service having an outage",
+      "Rate limit exceeded on third-party API",
+      "Network latency between our infra and their endpoint",
+      "Third-party API returning slow responses due to their internal issues"
+    ],
+    "resolution_steps": [
+      "1. Check third-party status page for ongoing incidents",
+      "2. Check our rate limit usage: review API response headers (X-RateLimit-Remaining)",
+      "3. If rate limited, implement exponential backoff and reduce request frequency",
+      "4. Enable circuit breaker if not already open — fail fast rather than queuing",
+      "5. Switch to fallback behavior: cached data, degraded mode, or user-facing message",
+      "6. If critical, contact third-party support with your account ID and timestamps",
+      "7. Monitor their status page for resolution and re-enable once confirmed stable"
+    ],
+    "prevention": [
+      "Implement circuit breaker for all external API calls",
+      "Cache third-party responses where possible",
+      "Design graceful degradation for all third-party dependencies",
+      "Monitor third-party API latency as a separate metric"
+    ],
+    "escalation": "This is typically not escalatable internally — it is a third-party issue. Escalate to product team to communicate user impact and timeline.",
+    "resolution_time_estimate": "Dependent on third-party — 30 minutes to several hours"
+  },
+  {
+    "id": "RB011",
+    "title": "Disk Space Exhaustion",
+    "tags": [
+      "disk",
+      "storage",
+      "space",
+      "logs",
+      "critical"
+    ],
+    "symptoms": [
+      "No space left on device error",
+      "Service failing to write logs",
+      "Database unable to write new data",
+      "File upload features failing",
+      "df -h showing 100% usage"
+    ],
+    "root_causes": [
+      "Log files not being rotated or truncated",
+      "Database growing without archiving old data",
+      "Large temporary files from failed jobs",
+      "Docker image layers accumulating",
+      "Core dumps filling disk"
+    ],
+    "resolution_steps": [
+      "1. Identify disk usage: `df -h` and `du -sh /* | sort -rh | head -20`",
+      "2. Find largest files: `find / -type f -size +500M 2>/dev/null`",
+      "3. Clear old logs: `journalctl --vacuum-size=500M` or truncate log files",
+      "4. Remove old Docker images: `docker image prune -a`",
+      "5. Remove core dumps: `find / -name 'core.*' -delete`",
+      "6. Archive or delete old database records if safe",
+      "7. Expand disk volume if immediate cleanup is insufficient"
+    ],
+    "prevention": [
+      "Set up log rotation with logrotate",
+      "Alert at 80% disk usage",
+      "Schedule regular cleanup jobs for temp files and old logs",
+      "Set Docker log driver with max-size limit"
+    ],
+    "escalation": "If disk cannot be freed quickly and database writes are failing, this is a P1. Escalate to infrastructure team to expand volume.",
+    "resolution_time_estimate": "10-30 minutes"
+  },
+  {
+    "id": "RB012",
+    "title": "Authentication Service / JWT Token Failure",
+    "tags": [
+      "auth",
+      "jwt",
+      "token",
+      "authentication",
+      "critical"
+    ],
+    "symptoms": [
+      "401 Unauthorized errors across services",
+      "JWT signature verification failed",
+      "Users being logged out unexpectedly",
+      "Token validation failing in middleware",
+      "invalid signature or expired token errors"
+    ],
+    "root_causes": [
+      "JWT signing secret rotated without updating all services",
+      "Clock skew between services causing token expiry mismatch",
+      "Auth service down causing token verification to fail",
+      "Wrong environment JWT secret deployed to production",
+      "Token expiry set too short in new deployment"
+    ],
+    "resolution_steps": [
+      "1. Confirm scope — are all users affected or a subset?",
+      "2. Check auth service status: `kubectl get pods -n auth`",
+      "3. Verify JWT secret is consistent across all services using it",
+      "4. Check server time sync: `timedatectl status` on auth and API servers",
+      "5. If secret was rotated, redeploy all dependent services with new secret",
+      "6. If token expiry is the issue, adjust and redeploy auth service",
+      "7. Clear token cache if services cache validation results"
+    ],
+    "prevention": [
+      "Use centralized secret management (AWS Secrets Manager, Vault)",
+      "Automate secret rotation with zero-downtime strategy",
+      "Sync server clocks with NTP",
+      "Alert on 401 error rate spike"
+    ],
+    "escalation": "Auth failure affecting all users is a P1. Escalate to security team and engineering lead immediately. Do not attempt to bypass authentication as a fix.",
+    "resolution_time_estimate": "10-30 minutes"
+  },
+  {
+    "id": "RB013",
+    "title": "Microservice Timeout / Cascading Failure",
+    "tags": [
+      "microservice",
+      "timeout",
+      "cascading",
+      "latency",
+      "high"
+    ],
+    "symptoms": [
+      "Timeout errors propagating across multiple services",
+      "Thread pool exhaustion in upstream service",
+      "Response times growing across the system",
+      "Multiple services degraded simultaneously",
+      "Health checks timing out"
+    ],
+    "root_causes": [
+      "One slow downstream service causing upstream thread exhaustion",
+      "Missing timeout configuration causing requests to hang",
+      "Retry storms amplifying load on struggling service",
+      "Synchronous call chain with no circuit breaker",
+      "Database slowdown propagating through service mesh"
+    ],
+    "resolution_steps": [
+      "1. Identify the origin service — find the first service to show degradation in traces",
+      "2. Check if one service is receiving disproportionate load",
+      "3. Enable circuit breaker on connections to the degraded service",
+      "4. Shed load — temporarily reject non-critical requests",
+      "5. Restart the struggling service if it is stuck",
+      "6. Review timeout configurations — ensure every HTTP call has a max timeout",
+      "7. Check for retry storms — confirm retries have backoff and jitter"
+    ],
+    "prevention": [
+      "Implement circuit breakers on all inter-service calls",
+      "Set explicit timeouts on all outbound HTTP calls",
+      "Use bulkhead pattern to isolate thread pools per dependency",
+      "Add distributed tracing to quickly identify origin of cascading failures"
+    ],
+    "escalation": "If more than 3 services are degraded simultaneously, declare a major incident. Page engineering lead and begin war room.",
+    "resolution_time_estimate": "15-45 minutes"
+  },
+  {
+    "id": "RB014",
+    "title": "Data Pipeline Failure / ETL Job Error",
+    "tags": [
+      "data",
+      "pipeline",
+      "etl",
+      "batch",
+      "medium"
+    ],
+    "symptoms": [
+      "Scheduled job not completing",
+      "Data freshness alerts firing",
+      "Dashboard showing stale data",
+      "ETL job failing with transformation error",
+      "Missing records in downstream tables"
+    ],
+    "root_causes": [
+      "Schema change in source table breaking transformation",
+      "Source data containing unexpected null or malformed values",
+      "Pipeline timing out due to increased data volume",
+      "Dependency service unavailable during job run",
+      "Insufficient memory or disk for transformation"
+    ],
+    "resolution_steps": [
+      "1. Check job logs for the specific failure point and error message",
+      "2. Identify which transformation step failed",
+      "3. If schema change: update transformation to handle new schema",
+      "4. If null/malformed data: add validation and null handling to pipeline",
+      "5. If timeout: increase job timeout or break into smaller batches",
+      "6. Re-run failed job after fix: trigger manual run from scheduler",
+      "7. Verify output data matches expected row counts and freshness"
+    ],
+    "prevention": [
+      "Add schema validation at pipeline entry point",
+      "Set up data quality checks after each transformation step",
+      "Alert on job failure immediately rather than waiting for data freshness alert",
+      "Run pipelines with idempotency so reruns are safe"
+    ],
+    "escalation": "If pipeline has been failing for more than 2 hours and business reports are affected, escalate to data engineering lead and notify stakeholders.",
+    "resolution_time_estimate": "30-90 minutes"
+  },
+  {
+    "id": "RB015",
+    "title": "CDN / Static Asset Serving Failure",
+    "tags": [
+      "cdn",
+      "static",
+      "assets",
+      "cloudfront",
+      "medium"
+    ],
+    "symptoms": [
+      "Frontend loading slowly or not at all",
+      "404 errors on CSS, JS, or image files",
+      "CloudFront returning errors",
+      "Assets loading from origin instead of edge",
+      "Cache invalidation taking too long"
+    ],
+    "root_causes": [
+      "CDN cache invalidation not completing after deployment",
+      "Origin S3 bucket permissions changed",
+      "CloudFront distribution misconfigured after update",
+      "Asset build failed silently — empty or corrupt files deployed",
+      "TTL too long serving stale assets after deployment"
+    ],
+    "resolution_steps": [
+      "1. Check CDN error rate in CloudFront metrics or equivalent",
+      "2. Test asset URLs directly from origin: `curl -I https://<s3-origin>/<asset-path>`",
+      "3. If origin is fine, invalidate CDN cache: `aws cloudfront create-invalidation --distribution-id <id> --paths '/*'`",
+      "4. Check S3 bucket policy for public read access",
+      "5. Verify asset build output — check file sizes are non-zero",
+      "6. If distribution is misconfigured, check recent CloudFront configuration changes",
+      "7. As immediate mitigation, point traffic directly to origin while CDN is fixed"
+    ],
+    "prevention": [
+      "Automate cache invalidation as part of deployment pipeline",
+      "Add asset size validation to build step — fail build if output is empty",
+      "Monitor CDN error rates with alerts",
+      "Use versioned asset filenames to avoid cache issues on deploy"
+    ],
+    "escalation": "If frontend is completely non-functional and CDN cannot be fixed within 15 minutes, consider rolling back deployment or routing directly to origin.",
+    "resolution_time_estimate": "10-30 minutes"
+  }
+]
