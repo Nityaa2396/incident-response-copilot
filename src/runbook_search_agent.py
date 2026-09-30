@@ -22,7 +22,7 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 load_dotenv()
 
 COLLECTION_NAME = "incident_runbooks"
-VECTOR_DIM = 128
+VECTOR_DIM = 1024
 RUNBOOKS_PATH = Path("src/runbooks.json")
 
 
@@ -32,12 +32,19 @@ def _get_qdrant() -> QdrantClient:
         api_key=get_secret("QDRANT_API_KEY"),
     )
 
-
 def _embed(text: str, dim: int = VECTOR_DIM) -> list[float]:
     """
-    Trigram n-gram embedding — same approach as PolicyCopilot.
-    Deterministic, no API calls needed, good enough for keyword-level retrieval.
+    V2: Semantic embedding using Voyage AI voyage-3 model.
+    Falls back to trigram n-gram if VOYAGE_API_KEY is not set.
     """
+    from src.config import get_secret
+    voyage_key = get_secret("VOYAGE_API_KEY")
+    if voyage_key:
+        import voyageai
+        client = voyageai.Client(api_key=voyage_key)
+        result = client.embed([text], model="voyage-3")
+        return result.embeddings[0]
+    # fallback to trigram
     vector = [0.0] * dim
     text = text.lower()
     for i in range(len(text) - 2):
@@ -157,14 +164,16 @@ def index_runbooks(force: bool = False) -> int:
     return len(points)
 
 
+CONFIDENCE_THRESHOLD = 0.65
+
 def search_runbooks(
     query: str,
     top_k: int = 3,
 ) -> list[RunbookMatch]:
     """
     Search for the most relevant runbooks given an incident query.
-    Query should be a combination of error type, symptoms, and affected components.
     Returns top_k RunbookMatch objects sorted by relevance score.
+    Flags low confidence matches when no runbook closely matches the incident.
     """
     client = _get_qdrant()
 
@@ -195,22 +204,31 @@ def search_runbooks(
             score=round(hit.score, 3),
         ))
 
-    return matches
+    # confidence threshold check
+    if matches and matches[0].score < CONFIDENCE_THRESHOLD:
+        print(
+            f"  ⚠️  Low confidence retrieval (best match: {matches[0].score:.2f}). "
+            f"No closely matching runbook found. "
+            f"Proceeding with general SRE reasoning. "
+            f"Consider adding a runbook for this incident type."
+        )
 
+    return matches
 
 def build_search_query(diagnostics: dict) -> str:
     """
-    Build a search query from diagnostics output.
-    Combines error type, root cause, and affected components for best retrieval.
+    Build an enriched search query from diagnostics output.
+    Combines error type, root cause, components, contributing factors,
+    and summary for stronger retrieval signal.
     """
     parts = [
         diagnostics.get("error_type", ""),
         diagnostics.get("root_cause", ""),
         " ".join(diagnostics.get("affected_components", [])),
+        " ".join(diagnostics.get("contributing_factors", [])[:2]),
         diagnostics.get("summary", ""),
     ]
     return " ".join(p for p in parts if p)
-
 
 if __name__ == "__main__":
     print("Indexing runbooks...")
