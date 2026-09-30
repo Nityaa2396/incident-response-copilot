@@ -1,0 +1,167 @@
+[
+  {
+    "id": "inc001",
+    "tier": 1,
+    "title": "PostgreSQL connection refused after deployment",
+    "incident_log": "ERROR 2026-09-24 03:42:11 [order-service] Failed to connect to PostgreSQL after 3 retries\npsycopg2.OperationalError: could not connect to server: Connection refused\n    Is the server running on host \"db-prod-01\" (10.0.1.45) and accepting TCP/IP connections on port 5432?\nCRITICAL: Order processing halted. 847 requests queued.\nLast successful DB connection: 2026-09-24 03:38:44\nRecent deployment: order-service v2.4.1 deployed at 03:35:00",
+    "expected_error_type": "DatabaseConnectionError",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB001",
+    "expected_root_cause_keywords": ["postgresql", "connection", "refused", "deployment"],
+    "notes": "Classic DB connection failure post-deploy. Clear root cause."
+  },
+  {
+    "id": "inc002",
+    "tier": 1,
+    "title": "Kubernetes pod OOM killed",
+    "incident_log": "WARN 2026-09-24 08:15:33 [payment-service] Pod payment-service-7d9f8b-xkp2q OOMKilled\nExit code: 137\nkubectl describe pod payment-service-7d9f8b-xkp2q:\n  Last State: Terminated\n    Reason: OOMKilled\n    Exit Code: 137\nMemory limit: 512Mi\nMemory usage at time of kill: 511Mi\nRecent deployment: payment-service v3.1.0 at 08:00:00",
+    "expected_error_type": "OOMKill",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB002",
+    "expected_root_cause_keywords": ["memory", "oom", "killed", "limit"],
+    "notes": "OOM kill with clear memory limit breach. High severity."
+  },
+  {
+    "id": "inc003",
+    "tier": 1,
+    "title": "API Gateway 502 Bad Gateway",
+    "incident_log": "ERROR 2026-09-24 14:22:05 [nginx] upstream prematurely closed connection\n502 Bad Gateway - /api/v2/checkout\nUpstream: http://checkout-service:8080\nAll health checks failing for checkout-service pods\nError rate: 100% on /api/v2/* endpoints\nResponse time before failure: avg 4800ms (normal: 120ms)\nNo recent deployments in last 2 hours",
+    "expected_error_type": "APIGatewayError",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB003",
+    "expected_root_cause_keywords": ["502", "gateway", "upstream", "checkout"],
+    "notes": "502 with upstream health check failure. Clear gateway issue."
+  },
+  {
+    "id": "inc004",
+    "tier": 1,
+    "title": "Redis cache connection failure",
+    "incident_log": "ERROR 2026-09-24 11:05:22 [session-service] Redis connection failed\nredis.exceptions.ConnectionError: Error 111 connecting to redis-prod:6379. Connection refused.\nCache miss rate: 100% (normal: 2%)\nResponse times increased from 45ms to 890ms\nRedis process status: unknown\nLast successful cache operation: 2026-09-24 11:02:15",
+    "expected_error_type": "CacheConnectionError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB004",
+    "expected_root_cause_keywords": ["redis", "connection", "cache", "refused"],
+    "notes": "Redis connection refused. Medium severity — app can degrade."
+  },
+  {
+    "id": "inc005",
+    "tier": 1,
+    "title": "Kubernetes CrashLoopBackOff after deployment",
+    "incident_log": "WARN 2026-09-24 16:30:44 [auth-service] Pod auth-service-6bc9d-p8k2x CrashLoopBackOff\nkubectl describe pod auth-service-6bc9d-p8k2x:\n  Reason: CrashLoopBackOff\n  Restart Count: 5\nLast log before crash:\n  ERROR: DATABASE_URL environment variable is not set\n  Failed to initialize connection pool\n  Application startup failed — exit code 1\nRecent deployment: auth-service v2.0.0 at 16:25:00",
+    "expected_error_type": "CrashLoopBackOff",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB005",
+    "expected_root_cause_keywords": ["crashloop", "environment", "variable", "startup"],
+    "notes": "Missing env var causing crash loop. Classic post-deploy issue."
+  },
+  {
+    "id": "inc006",
+    "tier": 1,
+    "title": "SSL certificate expired",
+    "incident_log": "ERROR 2026-09-24 00:01:03 [load-balancer] SSL handshake failed\ncurl: (60) SSL certificate problem: certificate has expired\nDomain: api.technova.com\nCertificate expiry: 2026-09-23 23:59:59 UTC\nAll HTTPS traffic failing\nHTTP traffic unaffected\nCustomers seeing security warning in browser",
+    "expected_error_type": "SSLCertificateExpiry",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB008",
+    "expected_root_cause_keywords": ["ssl", "certificate", "expired", "https"],
+    "notes": "SSL expiry at midnight. Critical — all HTTPS traffic affected."
+  },
+  {
+    "id": "inc007",
+    "tier": 1,
+    "title": "Disk space exhausted on application server",
+    "incident_log": "ERROR 2026-09-24 19:44:21 [app-server-03] No space left on device\nIOError: [Errno 28] No space left on device: '/var/log/app/application.log'\nDisk usage: 100% on /dev/sda1\nService failing to write logs\nDatabase writes also failing\ndf -h output: /dev/sda1 500G 500G 0 100% /",
+    "expected_error_type": "DiskSpaceExhausted",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB011",
+    "expected_root_cause_keywords": ["disk", "space", "no space", "device"],
+    "notes": "100% disk usage. Critical — DB writes failing."
+  },
+  {
+    "id": "inc008",
+    "tier": 2,
+    "title": "Slow database queries causing API timeout",
+    "incident_log": "WARN 2026-09-24 13:15:08 [api-service] Request timeout on /api/orders\nDatabase query exceeded 5000ms threshold\nAffected endpoint: GET /api/orders?user_id=*\nQuery: SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC\nExecution time: 8200ms (normal: 45ms)\nDB CPU: 94% (normal: 20%)\nTable orders: 45M rows\nNo recent deployment\nAutovacuum last run: 12 days ago",
+    "expected_error_type": "SlowQueryTimeout",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB006",
+    "expected_root_cause_keywords": ["slow", "query", "timeout", "index", "vacuum"],
+    "notes": "Inference required — missing index + stale autovacuum combined."
+  },
+  {
+    "id": "inc009",
+    "tier": 2,
+    "title": "Kafka consumer lag growing",
+    "incident_log": "WARN 2026-09-24 09:30:15 [monitoring] Consumer group lag alert\nConsumer group: notification-consumer\nTopic: user-events\nCurrent lag: 245,000 messages (threshold: 10,000)\nLag growing at: 2,400 messages/minute\nConsumer pods: 2 running (normal: 5)\nRecent change: notification-service scaled down for maintenance at 09:00:00\nProducer rate: unchanged",
+    "expected_error_type": "MessageQueueBacklog",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB007",
+    "expected_root_cause_keywords": ["kafka", "consumer", "lag", "scaled down"],
+    "notes": "Inference required — scale-down caused throughput mismatch."
+  },
+  {
+    "id": "inc010",
+    "tier": 2,
+    "title": "JWT authentication failure across services",
+    "incident_log": "ERROR 2026-09-24 10:05:33 [api-gateway] JWT validation failed\njwt.exceptions.InvalidSignatureError: Signature verification failed\nAffected services: all authenticated endpoints\nError rate: 100% on /api/v2/protected/*\nRecent change: JWT secret rotated at 09:55:00 as part of security rotation\nauth-service updated at 09:55:00\napi-gateway not yet updated\npayment-service not yet updated",
+    "expected_error_type": "AuthenticationError",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB012",
+    "expected_root_cause_keywords": ["jwt", "signature", "secret", "rotation"],
+    "notes": "Inference required — partial secret rotation left services out of sync."
+  },
+  {
+    "id": "inc011",
+    "tier": 2,
+    "title": "Cascading timeout across microservices",
+    "incident_log": "ERROR 2026-09-24 15:22:44 [order-service] Upstream timeout\nHTTPError: 504 Gateway Timeout from inventory-service\norder-service thread pool: 98% utilized\nResponse times: order-service 8200ms, inventory-service 6100ms, pricing-service 5800ms\nAll services degraded simultaneously\nRoot alert: pricing-service CPU 99% starting at 15:18:00\nNo circuit breaker configured on any service",
+    "expected_error_type":" CascadingFailure",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB013",
+    "expected_root_cause_keywords": ["cascading", "timeout", "thread pool", "circuit breaker"],
+    "notes": "Inference required — pricing-service slowdown cascaded up the chain."
+  },
+  {
+    "id": "inc012",
+    "tier": 2,
+    "title": "ETL pipeline failure due to schema change",
+    "incident_log": "ERROR 2026-09-24 02:15:09 [etl-pipeline] Transformation failed\nKeyError: 'customer_email_verified' not found in source record\nPipeline: customer-data-sync\nStep: transform_customer_records\nSource table: customers (updated schema yesterday)\nRecords processed: 12,450 of 890,000\nDashboard showing stale data from 23 hours ago\nScheduled run: daily at 02:00:00",
+    "expected_error_type": "DataPipelineError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB014",
+    "expected_root_cause_keywords": ["etl", "schema", "pipeline", "transform"],
+    "notes": "Inference required — schema change broke pipeline transformation."
+  },
+  {
+    "id": "inc013",
+    "tier": 3,
+    "title": "Intermittent 502s with no obvious cause",
+    "incident_log": "WARN 2026-09-24 20:10:55 [monitoring] Intermittent 502 errors detected\nError rate: 3.2% (threshold: 1%)\nAffected endpoints: random across /api/*\nPattern: errors appear in 30-second bursts every 8-10 minutes\nAll upstream services reporting healthy\nNo recent deployments in 72 hours\nLoad balancer health checks: passing\nNetwork latency: slightly elevated (avg +12ms vs baseline)\nTime of first occurrence: 19:45:00",
+    "expected_error_type": "IntermittentGatewayError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB003",
+    "expected_root_cause_keywords": ["intermittent", "502", "network", "latency"],
+    "notes": "Edge case — intermittent pattern suggests network or upstream flap."
+  },
+  {
+    "id": "inc014",
+    "tier": 3,
+    "title": "Memory growing slowly — not yet OOM",
+    "incident_log": "WARN 2026-09-24 17:55:12 [monitoring] Memory usage trending up\nService: recommendation-service\nMemory 7 days ago: 210Mi\nMemory today: 445Mi (limit: 512Mi)\nMemory growth rate: ~33Mi/day\nNo OOM kill yet\nNo recent deployments in 5 days\nGarbage collection logs: normal frequency\nHeap dump not yet captured",
+    "expected_error_type": "MemoryLeak",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB002",
+    "expected_root_cause_keywords": ["memory", "leak", "growing", "heap"],
+    "notes": "Edge case — slow leak, not yet critical. Needs proactive action."
+  },
+  {
+    "id": "inc015",
+    "tier": 3,
+    "title": "CDN serving stale assets after deployment",
+    "incident_log": "WARN 2026-09-24 11:45:33 [frontend-monitoring] Users reporting stale UI\nSymptom: Users seeing old version of checkout page after v4.2.0 deployment\nDeployment completed: 11:30:00\nCache invalidation triggered: yes, at 11:31:00\nCloudFront invalidation status: completed\nBut users in EU still seeing old assets\nAsset URLs: versioned (e.g. main.a3f9b2.js)\nCDN edge nodes: 47 globally\nEU edge propagation: potentially incomplete",
+    "expected_error_type": "CDNPropagationDelay",
+    "expected_severity": "low",
+    "expected_top_runbook": "RB015",
+    "expected_root_cause_keywords": ["cdn", "cache", "propagation", "stale"],
+    "notes": "Edge case — invalidation completed but edge propagation incomplete."
+  }
+]
