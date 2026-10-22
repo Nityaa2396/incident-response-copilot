@@ -164,7 +164,7 @@ def index_runbooks(force: bool = False) -> int:
     return len(points)
 
 
-CONFIDENCE_THRESHOLD = 0.65
+CONFIDENCE_THRESHOLD = 0.55
 
 def search_runbooks(
     query: str,
