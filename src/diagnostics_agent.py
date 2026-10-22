@@ -2,7 +2,7 @@
 Diagnostics Agent for Incident Response Copilot.
 
 Takes a raw error log or incident description.
-Returns structured findings: error type, severity, root cause, affected components.
+Returns structured findings: error type, category, severity, root cause, affected components.
 """
 
 from __future__ import annotations
@@ -22,6 +22,21 @@ MODEL = "claude-sonnet-4-6"
 
 Severity = Literal["critical", "high", "medium", "low"]
 
+# Fixed taxonomy, derived from the runbook library (not from eval outputs).
+CATEGORIES = (
+    "database",             # connection failures, slow queries
+    "resource_exhaustion",  # OOM, disk full
+    "network_gateway",      # gateway 5xx, CDN / edge issues
+    "cache",                # Redis / cache failures
+    "orchestration",        # Kubernetes pods, CrashLoopBackOff
+    "messaging",            # queue lag, consumer backlog
+    "security",             # SSL/TLS expiry, JWT / authentication
+    "deployment",           # bad release, rollback needed
+    "external_dependency",  # third-party API timeouts
+    "cascading",            # failure spreading across multiple services
+    "data_pipeline",        # ETL / batch job failures
+)
+
 SYSTEM_PROMPT = """You are a senior site reliability engineer specializing in incident diagnosis.
 
 You receive a raw error log or incident description. You return a structured diagnosis.
@@ -29,18 +44,37 @@ You receive a raw error log or incident description. You return a structured dia
 Rules:
 - Identify the most likely root cause based only on what is in the input.
 - Be specific — name the exact component, service, or line that is failing if visible.
-- Severity levels:
-  - "critical" — system is down, data loss possible, or revenue impact
-  - "high" — major feature broken, significant user impact
-  - "medium" — partial degradation, workaround exists
-  - "low" — minor issue, cosmetic or edge case
+- "category" — pick EXACTLY ONE from this fixed list, the one that best describes the
+  incident as a whole (not just the surface exception):
+  - "database" — database connection failures, slow queries, locks
+  - "resource_exhaustion" — out of memory, disk full, CPU/FD exhaustion
+  - "network_gateway" — gateway 5xx errors, load balancer, CDN or edge issues
+  - "cache" — Redis or other cache failures
+  - "orchestration" — Kubernetes pod failures, CrashLoopBackOff, scheduling
+  - "messaging" — queue lag, consumer backlog, broker issues
+  - "security" — SSL/TLS certificate problems, JWT or authentication failures
+  - "deployment" — a bad release; rollback is the likely remedy
+  - "external_dependency" — third-party API or vendor timeouts/outages
+  - "cascading" — one failure spreading across several services (use this when multiple
+    services fail in sequence or a timeout in one service is exhausting others)
+  - "data_pipeline" — ETL, batch or scheduled data job failures
+- "error_type" — a short specific name for the failure (e.g. "DatabaseConnectionError", "OOMKill").
+- Severity reflects ACTUAL, CURRENT impact shown in the input — not worst-case potential.
+  Ignore log-level labels such as "CRITICAL:" or "ERROR" in the log text; judge impact yourself.
+  - "critical" — a core customer-facing function is fully down, or data loss/corruption
+    is actively occurring
+  - "high" — a major feature is broken or heavily degraded for many users, no easy workaround
+  - "medium" — partial degradation, limited user scope, or a workaround exists
+  - "low" — minor issue, internal-only, cosmetic, or no current user impact (e.g. a warning
+    about something that will fail soon)
 - "affected_components" — list every service, database, API, or module mentioned or implied.
 - "contributing_factors" — list conditions that likely made this worse (high load, recent deploy, missing retry logic, etc).
 - "confidence" — how confident are you in this diagnosis? (0.0 to 1.0)
 - "needs_more_info" — list any missing information that would improve the diagnosis.
 
 Output MUST be a single JSON object with exactly these keys and no others:
-  "error_type": string (e.g. "DatabaseConnectionError", "OOMKill", "TimeoutError")
+  "error_type": string
+  "category": one of the category values listed above
   "severity": "critical" | "high" | "medium" | "low"
   "root_cause": string (one clear sentence)
   "affected_components": list of strings
@@ -62,6 +96,7 @@ class DiagnosticsResult:
     confidence: float
     needs_more_info: list[str]
     summary: str
+    category: str = "unknown"  # defaulted so existing constructors keep working
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -101,6 +136,7 @@ def run_diagnostics(
         confidence=float(payload.get("confidence", 0.5)),
         needs_more_info=list(payload.get("needs_more_info", [])),
         summary=str(payload.get("summary", "")).strip(),
+        category=_normalize_category(payload.get("category", "")),
     )
 
 
@@ -130,6 +166,11 @@ def _normalize_severity(value: str) -> Severity:
     if normalized in ("critical", "high", "medium", "low"):
         return normalized  # type: ignore
     return "medium"
+
+
+def _normalize_category(value: str) -> str:
+    normalized = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    return normalized if normalized in CATEGORIES else "unknown"
 
 
 if __name__ == "__main__":
