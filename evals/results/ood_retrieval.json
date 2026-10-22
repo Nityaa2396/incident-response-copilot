@@ -1,0 +1,47 @@
+[
+  {
+    "id": "ood1",
+    "title": "DNS resolution failure",
+    "category": "cascading",
+    "top_runbook": "RB013",
+    "top_score": 0.522,
+    "margin": 0.079,
+    "seconds": 12.2
+  },
+  {
+    "id": "ood2",
+    "title": "API rate limit lockout (429s)",
+    "category": "external_dependency",
+    "top_runbook": "RB010",
+    "top_score": 0.483,
+    "margin": 0.002,
+    "seconds": 11.0
+  },
+  {
+    "id": "ood3",
+    "title": "Elasticsearch cluster status red",
+    "category": "database",
+    "top_runbook": "RB014",
+    "top_score": 0.483,
+    "margin": 0.043,
+    "seconds": 10.5
+  },
+  {
+    "id": "ood4",
+    "title": "Terraform state lock blocking deploys",
+    "category": "deployment",
+    "top_runbook": "RB009",
+    "top_score": 0.45,
+    "margin": 0.01,
+    "seconds": 11.0
+  },
+  {
+    "id": "ood5",
+    "title": "Push notification delivery failure (APNs)",
+    "category": "security",
+    "top_runbook": "RB012",
+    "top_score": 0.58,
+    "margin": 0.123,
+    "seconds": 8.9
+  }
+]
