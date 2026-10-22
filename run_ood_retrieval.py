@@ -92,7 +92,7 @@ def main():
     for inc in OOD_INCIDENTS:
         t0 = time.time()
         diag = run_diagnostics(inc["log"])
-        query = build_search_query(diag)
+        query = build_search_query(diag.to_dict())
         matches = search_runbooks(query, top_k=3)
         scores = [attr(m, "score", default=0.0) for m in matches]
         ids = [attr(m, "id", "runbook_id", default="?") for m in matches]
