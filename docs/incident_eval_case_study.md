@@ -62,13 +62,29 @@ By tier (v2): Tier 1 type 71.4%, severity 57.1%, top-1 71.4%, top-3 85.7%. Tier 
 - **One taxonomy overlap.** inc002 (Kubernetes pod OOM kill) fits both `orchestration` and `resource_exhaustion`. The ground truth follows the runbook, and the model's answer is defensible.
 - **Synthetic data.** Incidents were written to test the pipeline, not sampled from production.
 
-## Open issue: low-confidence warning is miscalibrated
+## Low-confidence warning: recalibration
 
-The pipeline warns when the best retrieval score is below 0.65. That threshold came from trigram-era scores. With Voyage embeddings, correct matches commonly score 0.60 to 0.64, so the warning fired on 10 of 15 incidents including several correct hits. It does not currently separate good matches from bad ones. The fix is to pick a threshold from the score distribution of correct versus incorrect top-1 retrievals, and to report honestly if the two distributions overlap.
+The pipeline warns when the best retrieval score is below a threshold, meant for incidents that match no runbook. The original threshold (0.65) came from trigram-era scores. With Voyage embeddings it fired on 9 of 13 correct top-1 matches while catching only 1 of the 2 wrong ones, so it was mostly noise.
+
+**Two signals were checked on saved results.**
+
+- **Score among the 15 in-scope incidents:** the two wrong top-1 matches (0.597 and 0.667) sit inside the range of the correct ones (0.561 to 0.729). Retrieval score cannot detect a wrong match. The retriever is confident in a wrong answer when the query itself is wrong (finding 1).
+- **Margin over the second-ranked runbook:** no better. The out-of-scope margins fall inside the in-scope range.
+
+**Out-of-scope test.** Five incidents with no matching runbook (DNS failure, API rate-limit lockout, Elasticsearch cluster red, Terraform state lock, expired APNs push token) were run through diagnostics and search only.
+
+| | Top-1 score range |
+|---|---|
+| In-scope (15) | 0.561 to 0.729 |
+| Out-of-scope (5) | 0.450 to 0.580 |
+
+Four of the five out-of-scope incidents scored 0.450 to 0.522, below every in-scope score. The fifth (expired APNs token, 0.580) was matched to an auth-token-expiry runbook, a related and arguably useful result. The threshold was lowered from 0.65 to 0.55, which on this data flags 4 of 5 out-of-scope incidents and none of the 15 in-scope ones.
+
+**How far to trust this.** The five out-of-scope incidents were chosen by the author, and the threshold was set using the same data it was checked against, so there is no held-out set. The lowest in-scope score (0.561, inc013) sits just above the cutoff. Treat 0.55 as a reasonable starting point to re-validate on new data, not a calibrated value. The warning also cannot catch confident-but-wrong matches such as inc003 and inc005.
 
 ## Next steps
 
-1. Calibrate the retrieval-confidence threshold from the observed score distribution.
-2. Add a category sanity check before the category drives retrieval, targeting the failure mode in finding 1.
+1. Add a category sanity check before the category drives retrieval, targeting the failure mode in finding 1.
+2. Re-validate the 0.55 threshold on a larger, independently written out-of-scope set.
 3. Add a rubric clause for incidents that are not yet failing but will become critical if untreated (inc014).
 4. Repeat each evaluation run several times and report variance before claiming further gains.
