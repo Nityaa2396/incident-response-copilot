@@ -1,0 +1,74 @@
+{
+  "total": 15,
+  "errors": 0,
+  "overall": {
+    "n": 15,
+    "error_type_acc": 0.667,
+    "error_type_exact": 0.267,
+    "category_acc": 0.8,
+    "severity_exact": 0.4,
+    "severity_adjacent": 1.0,
+    "severity_over_rated": 8,
+    "severity_under_rated": 1,
+    "runbook_top1": 0.867,
+    "runbook_top3": 0.933,
+    "root_cause_keywords": 0.61,
+    "avg_duration_s": 95.866
+  },
+  "by_tier": {
+    "1": {
+      "n": 7,
+      "error_type_acc": 0.714,
+      "error_type_exact": 0.286,
+      "category_acc": 0.571,
+      "severity_exact": 0.571,
+      "severity_adjacent": 1.0,
+      "severity_over_rated": 3,
+      "severity_under_rated": 0,
+      "runbook_top1": 0.714,
+      "runbook_top3": 0.857,
+      "root_cause_keywords": 0.679,
+      "avg_duration_s": 91.893
+    },
+    "2": {
+      "n": 5,
+      "error_type_acc": 0.4,
+      "error_type_exact": 0.2,
+      "category_acc": 1.0,
+      "severity_exact": 0.2,
+      "severity_adjacent": 1.0,
+      "severity_over_rated": 4,
+      "severity_under_rated": 0,
+      "runbook_top1": 1.0,
+      "runbook_top3": 1.0,
+      "root_cause_keywords": 0.63,
+      "avg_duration_s": 98.227
+    },
+    "3": {
+      "n": 3,
+      "error_type_acc": 1.0,
+      "error_type_exact": 0.333,
+      "category_acc": 1.0,
+      "severity_exact": 0.333,
+      "severity_adjacent": 1.0,
+      "severity_over_rated": 1,
+      "severity_under_rated": 1,
+      "runbook_top1": 1.0,
+      "runbook_top3": 1.0,
+      "root_cause_keywords": 0.417,
+      "avg_duration_s": 101.204
+    }
+  },
+  "retrieval_misses": [
+    {
+      "id": "inc003",
+      "expected": "RB003",
+      "got": "RB013"
+    },
+    {
+      "id": "inc005",
+      "expected": "RB005",
+      "got": "RB009"
+    }
+  ]
+}

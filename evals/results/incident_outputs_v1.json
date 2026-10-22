@@ -1,0 +1,678 @@
+[
+  {
+    "id": "inc001",
+    "tier": 1,
+    "title": "PostgreSQL connection refused after deployment",
+    "incident_log": "ERROR 2026-09-24 03:42:11 [order-service] Failed to connect to PostgreSQL after 3 retries\npsycopg2.OperationalError: could not connect to server: Connection refused\n    Is the server running on host \"db-prod-01\" (10.0.1.45) and accepting TCP/IP connections on port 5432?\nCRITICAL: Order processing halted. 847 requests queued.\nLast successful DB connection: 2026-09-24 03:38:44\nRecent deployment: order-service v2.4.1 deployed at 03:35:00",
+    "expected_error_type": "DatabaseConnectionError",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB001",
+    "expected_root_cause_keywords": [
+      "postgresql",
+      "connection",
+      "refused",
+      "deployment"
+    ],
+    "actual_error_type": "DatabaseConnectionError",
+    "actual_severity": "critical",
+    "actual_confidence": 0.82,
+    "actual_root_cause": "The PostgreSQL server on host db-prod-01 (10.0.1.45:5432) is refusing TCP/IP connections, causing complete order processing failure, most likely triggered by or coinciding with the deployment of order-service v2.4.1 at 03:35:00.",
+    "actual_summary": "The order-service lost all connectivity to its PostgreSQL database (db-prod-01:5432) at approximately 03:38:44, with the connection being actively refused rather than timing out, indicating the database process is down or not listening. This coincides closely with the deployment of order-service v2.4.1 at 03:35:00, suggesting the new version may have introduced a misconfiguration (e.g., wrong host, port, credentials, or connection pool exhaustion) or the deployment process itself disrupted the database. 847 orders are currently queued and unprocessed, representing active revenue impact until connectivity is restored.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.656
+      },
+      {
+        "id": "RB004",
+        "title": "Redis Cache Connection Failure",
+        "score": 0.544
+      },
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.541
+      }
+    ],
+    "top_runbook_retrieved": "RB001",
+    "fix_actions_count": 5,
+    "fix_risk_level": "high",
+    "fix_summary": "The immediate priority is to restore PostgreSQL connectivity on db-prod-01 by checking if the process is down and restarting it, while simultaneously rolling back order-service to the pre-v2.4.1 version to eliminate the likely misconfiguration introduced by the 03:35 deployment. The connection-refused error (rather than a timeout) strongly indicates either the PostgreSQL process is down, max_connections is exhausted by a leaking connection pool in v2.4.1, or a failed migration crashed/wedged the database. With 847 orders blocked and active revenue impact, the rollback and DB restart should be executed in parallel by two responders to minimize time-to-recovery.",
+    "postmortem_title": "PostgreSQL Outage \u2014 Order Service \u2014 2026-09-24",
+    "postmortem_action_items_count": 10,
+    "pipeline_duration_seconds": 106.2176878452301,
+    "error": null
+  },
+  {
+    "id": "inc002",
+    "tier": 1,
+    "title": "Kubernetes pod OOM killed",
+    "incident_log": "WARN 2026-09-24 08:15:33 [payment-service] Pod payment-service-7d9f8b-xkp2q OOMKilled\nExit code: 137\nkubectl describe pod payment-service-7d9f8b-xkp2q:\n  Last State: Terminated\n    Reason: OOMKilled\n    Exit Code: 137\nMemory limit: 512Mi\nMemory usage at time of kill: 511Mi\nRecent deployment: payment-service v3.1.0 at 08:00:00",
+    "expected_error_type": "OOMKill",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB002",
+    "expected_root_cause_keywords": [
+      "memory",
+      "oom",
+      "killed",
+      "limit"
+    ],
+    "actual_error_type": "OOMKill",
+    "actual_severity": "critical",
+    "actual_confidence": 0.88,
+    "actual_root_cause": "The payment-service pod was OOMKilled because its memory consumption reached the 512Mi container limit (511Mi at time of kill), most likely introduced by a memory leak or increased memory footprint in the v3.1.0 deployment released 15 minutes prior.",
+    "actual_summary": "The payment-service pod was forcibly terminated by the Kubernetes kubelet after exhausting its 512Mi memory limit (exit code 137), which is a strong indicator of an OOMKill event. The timing strongly correlates with the v3.1.0 deployment that went out 15 minutes earlier, suggesting the new version introduced either a memory leak or a significantly higher baseline memory footprint. Immediate mitigation options include rolling back to v3.0.x or temporarily increasing the memory limit while a root cause investigation is conducted on the new release.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB002",
+        "title": "Service OOM Kill / Memory Exhaustion",
+        "score": 0.646
+      },
+      {
+        "id": "RB009",
+        "title": "Deployment Rollback Procedure",
+        "score": 0.522
+      },
+      {
+        "id": "RB005",
+        "title": "Kubernetes Pod CrashLoopBackOff",
+        "score": 0.47
+      }
+    ],
+    "top_runbook_retrieved": "RB002",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The payment-service v3.1.0 deployment released 15 minutes before the OOMKill is the primary suspect \u2014 roll it back immediately using `kubectl rollout undo deployment/payment-service` to restore the v3.0.x baseline, while simultaneously extracting logs from the crashed pod for root cause analysis. If a database migration blocks rollback, apply a temporary memory limit increase to 1Gi as a stopgap and escalate to the owning team. The core investigation focus for v3.1.0 should be new in-memory caches, expanded data loading patterns, or missing eviction policies in the deployment diff.",
+    "postmortem_title": "OOMKill Outage \u2014 payment-service \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 94.43197894096375,
+    "error": null
+  },
+  {
+    "id": "inc003",
+    "tier": 1,
+    "title": "API Gateway 502 Bad Gateway",
+    "incident_log": "ERROR 2026-09-24 14:22:05 [nginx] upstream prematurely closed connection\n502 Bad Gateway - /api/v2/checkout\nUpstream: http://checkout-service:8080\nAll health checks failing for checkout-service pods\nError rate: 100% on /api/v2/* endpoints\nResponse time before failure: avg 4800ms (normal: 120ms)\nNo recent deployments in last 2 hours",
+    "expected_error_type": "APIGatewayError",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB003",
+    "expected_root_cause_keywords": [
+      "502",
+      "gateway",
+      "upstream",
+      "checkout"
+    ],
+    "actual_error_type": "UpstreamConnectionFailure",
+    "actual_severity": "critical",
+    "actual_confidence": 0.78,
+    "actual_root_cause": "The checkout-service pods are completely unresponsive, causing nginx to receive no valid upstream connections and return 502 errors across all /api/v2/* endpoints.",
+    "actual_summary": "The checkout-service is fully down \u2014 all pods are failing health checks and nginx is receiving no valid upstream responses, resulting in 100% 502 error rate on all /api/v2/* endpoints. The pre-failure latency spike from 120ms to 4800ms strongly suggests the service was under severe stress (resource exhaustion, blocked threads, or a failing downstream dependency) before crashing entirely. Since no recent deployment occurred, the most likely causes are an OOM kill, thread/connection pool exhaustion, or a critical dependency (database or external API) becoming unavailable.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.644
+      },
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.557
+      },
+      {
+        "id": "RB003",
+        "title": "API Gateway 502 Bad Gateway",
+        "score": 0.525
+      }
+    ],
+    "top_runbook_retrieved": "RB013",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The checkout-service is completely down \u2014 all pods are unresponsive to health checks, causing nginx to return 502s across all /api/v2/* endpoints. Immediate actions prioritize restarting the checkout-service deployment to restore pod functionality while simultaneously investigating pod termination logs and the PostgreSQL connection pool to identify whether an OOM kill or downstream dependency failure triggered the crash. The pre-failure latency spike from 120ms to 4800ms is a strong indicator of progressive resource exhaustion (database connections, thread pool, or external API degradation), so simply restarting pods may only provide temporary relief unless the underlying dependency issue is also resolved.",
+    "postmortem_title": "Critical Checkout Service Outage \u2014 502 Bad Gateway on /api/v2/* \u2014 2026-09-24",
+    "postmortem_action_items_count": 10,
+    "pipeline_duration_seconds": 108.65309691429138,
+    "error": null
+  },
+  {
+    "id": "inc004",
+    "tier": 1,
+    "title": "Redis cache connection failure",
+    "incident_log": "ERROR 2026-09-24 11:05:22 [session-service] Redis connection failed\nredis.exceptions.ConnectionError: Error 111 connecting to redis-prod:6379. Connection refused.\nCache miss rate: 100% (normal: 2%)\nResponse times increased from 45ms to 890ms\nRedis process status: unknown\nLast successful cache operation: 2026-09-24 11:02:15",
+    "expected_error_type": "CacheConnectionError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB004",
+    "expected_root_cause_keywords": [
+      "redis",
+      "connection",
+      "cache",
+      "refused"
+    ],
+    "actual_error_type": "RedisConnectionError",
+    "actual_severity": "high",
+    "actual_confidence": 0.88,
+    "actual_root_cause": "The Redis process on redis-prod:6379 is not accepting connections (Error 111: Connection refused), indicating the Redis service has crashed or stopped, causing 100% cache miss rate and a ~20x increase in response latency.",
+    "actual_summary": "The Redis instance at redis-prod:6379 has crashed or been stopped, as evidenced by an active connection refusal (Error 111) rather than a timeout, with the last successful operation recorded at 11:02:15. This has driven the cache miss rate to 100% (vs. a normal 2%), causing session-service response times to spike from 45ms to 890ms as all requests fall through to the underlying data store. Immediate action should be to restart the Redis process, investigate the root cause of its failure (likely OOM or crash), and verify data integrity if persistence was enabled.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB004",
+        "title": "Redis Cache Connection Failure",
+        "score": 0.737
+      },
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.586
+      },
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.562
+      }
+    ],
+    "top_runbook_retrieved": "RB004",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The Redis process on redis-prod:6379 has crashed or been OOM-killed, causing 100% cache miss rate and a ~20x latency increase in session-service. The immediate priority is to inspect Redis logs for crash root cause and then restart the Redis service, followed by verifying that connections are restored and latency recovers. Simultaneously, ensure Redis is configured with systemd auto-restart (or equivalent) to prevent a recurrence of this undetected outage.",
+    "postmortem_title": "Redis Cache Outage \u2014 Session Service \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 85.99481010437012,
+    "error": null
+  },
+  {
+    "id": "inc005",
+    "tier": 1,
+    "title": "Kubernetes CrashLoopBackOff after deployment",
+    "incident_log": "WARN 2026-09-24 16:30:44 [auth-service] Pod auth-service-6bc9d-p8k2x CrashLoopBackOff\nkubectl describe pod auth-service-6bc9d-p8k2x:\n  Reason: CrashLoopBackOff\n  Restart Count: 5\nLast log before crash:\n  ERROR: DATABASE_URL environment variable is not set\n  Failed to initialize connection pool\n  Application startup failed \u2014 exit code 1\nRecent deployment: auth-service v2.0.0 at 16:25:00",
+    "expected_error_type": "CrashLoopBackOff",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB005",
+    "expected_root_cause_keywords": [
+      "crashloop",
+      "environment",
+      "variable",
+      "startup"
+    ],
+    "actual_error_type": "MissingEnvironmentVariable",
+    "actual_severity": "critical",
+    "actual_confidence": 0.97,
+    "actual_root_cause": "The auth-service v2.0.0 deployment is missing the DATABASE_URL environment variable, causing the application to fail during startup when attempting to initialize the database connection pool.",
+    "actual_summary": "The auth-service entered a CrashLoopBackOff state immediately after the v2.0.0 deployment because the DATABASE_URL environment variable is not present in the pod's environment, preventing the application from initializing its database connection pool and causing it to exit with code 1. This is almost certainly a deployment configuration regression \u2014 the Secret, ConfigMap, or env var injection that supplies DATABASE_URL was likely omitted or broken in the new release. Authentication is completely non-functional, making this a critical incident requiring an immediate rollback to the previous version or an urgent fix to restore the missing environment variable.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB009",
+        "title": "Deployment Rollback Procedure",
+        "score": 0.621
+      },
+      {
+        "id": "RB005",
+        "title": "Kubernetes Pod CrashLoopBackOff",
+        "score": 0.606
+      },
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.565
+      }
+    ],
+    "top_runbook_retrieved": "RB009",
+    "fix_actions_count": 5,
+    "fix_risk_level": "low",
+    "fix_summary": "The auth-service v2.0.0 deployment is in CrashLoopBackOff because the DATABASE_URL environment variable is not being injected into the pod, most likely due to a missing or misconfigured Kubernetes Secret reference in the new deployment manifest. The immediate priority is to execute `kubectl rollout undo deployment/auth-service` to restore the previous working version and recover authentication functionality within minutes. In parallel, the v2.0.0 deployment manifest should be audited to identify the missing env var injection block and corrected before re-deploying.",
+    "postmortem_title": "CrashLoopBackOff \u2014 auth-service v2.0.0 \u2014 Missing DATABASE_URL \u2014 2026-09-24",
+    "postmortem_action_items_count": 10,
+    "pipeline_duration_seconds": 85.09755325317383,
+    "error": null
+  },
+  {
+    "id": "inc006",
+    "tier": 1,
+    "title": "SSL certificate expired",
+    "incident_log": "ERROR 2026-09-24 00:01:03 [load-balancer] SSL handshake failed\ncurl: (60) SSL certificate problem: certificate has expired\nDomain: api.technova.com\nCertificate expiry: 2026-09-23 23:59:59 UTC\nAll HTTPS traffic failing\nHTTP traffic unaffected\nCustomers seeing security warning in browser",
+    "expected_error_type": "SSLCertificateExpiry",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB008",
+    "expected_root_cause_keywords": [
+      "ssl",
+      "certificate",
+      "expired",
+      "https"
+    ],
+    "actual_error_type": "SSLCertificateExpiredError",
+    "actual_severity": "critical",
+    "actual_confidence": 0.98,
+    "actual_root_cause": "The SSL/TLS certificate for api.technova.com expired at 2026-09-23 23:59:59 UTC, causing the load balancer to fail all HTTPS handshakes starting at 2026-09-24 00:01:03 UTC.",
+    "actual_summary": "The SSL certificate for api.technova.com expired at 2026-09-23 23:59:59 UTC, immediately causing all HTTPS traffic to fail as the load balancer can no longer complete SSL handshakes. Customers are experiencing browser security warnings and API calls over HTTPS are completely broken, while HTTP traffic remains unaffected. The likely root cause is a failure in the certificate renewal pipeline combined with absent or ignored expiry monitoring alerts.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB008",
+        "title": "SSL Certificate Expiry",
+        "score": 0.676
+      },
+      {
+        "id": "RB014",
+        "title": "Data Pipeline Failure / ETL Job Error",
+        "score": 0.438
+      },
+      {
+        "id": "RB003",
+        "title": "API Gateway 502 Bad Gateway",
+        "score": 0.438
+      }
+    ],
+    "top_runbook_retrieved": "RB008",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The SSL/TLS certificate for api.technova.com expired at 2026-09-23 23:59:59 UTC, causing all HTTPS traffic to fail immediately as the load balancer cannot complete TLS handshakes. The fix requires immediately renewing the certificate (via ACM, certbot, or manual issuance depending on the provisioning method) and deploying it to the load balancer's HTTPS listener without a full restart. After restoring service, the renewal pipeline failure and missing expiry monitoring must be remediated to prevent recurrence.",
+    "postmortem_title": "SSL Certificate Expiry Outage \u2014 api.technova.com \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 86.41911196708679,
+    "error": null
+  },
+  {
+    "id": "inc007",
+    "tier": 1,
+    "title": "Disk space exhausted on application server",
+    "incident_log": "ERROR 2026-09-24 19:44:21 [app-server-03] No space left on device\nIOError: [Errno 28] No space left on device: '/var/log/app/application.log'\nDisk usage: 100% on /dev/sda1\nService failing to write logs\nDatabase writes also failing\ndf -h output: /dev/sda1 500G 500G 0 100% /",
+    "expected_error_type": "DiskSpaceExhausted",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB011",
+    "expected_root_cause_keywords": [
+      "disk",
+      "space",
+      "no space",
+      "device"
+    ],
+    "actual_error_type": "DiskSpaceExhausted",
+    "actual_severity": "critical",
+    "actual_confidence": 0.97,
+    "actual_root_cause": "The root filesystem partition /dev/sda1 on app-server-03 is 100% full (500GB used of 500GB), preventing both application log writes and database writes from completing.",
+    "actual_summary": "app-server-03's root filesystem (/dev/sda1) has reached 100% capacity (500GB), causing an IOError when the application attempts to write to its log file and cascading database write failures due to the same storage constraint. The most likely cause is uncontrolled log growth due to missing or broken log rotation, though large database files or other artifacts on the same partition could also be contributors. Immediate remediation requires freeing disk space (deleting old logs, temp files, or core dumps) and implementing log rotation, disk usage monitoring, and alerting to prevent recurrence.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB011",
+        "title": "Disk Space Exhaustion",
+        "score": 0.663
+      },
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.53
+      },
+      {
+        "id": "RB014",
+        "title": "Data Pipeline Failure / ETL Job Error",
+        "score": 0.525
+      }
+    ],
+    "top_runbook_retrieved": "RB011",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "app-server-03's root filesystem (/dev/sda1) is 100% full, causing cascading IOError failures on application log writes and database write operations. The immediate priority is to free disk space by truncating the application log file and removing core dumps, temp files, and old rotated logs \u2014 targeting at least 10GB freed before restarting affected services. Once service is restored, log rotation must be configured and disk space alerting implemented to prevent this from recurring.",
+    "postmortem_title": "Disk Space Exhaustion \u2014 app-server-03 \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 85.75741791725159,
+    "error": null
+  },
+  {
+    "id": "inc008",
+    "tier": 2,
+    "title": "Slow database queries causing API timeout",
+    "incident_log": "WARN 2026-09-24 13:15:08 [api-service] Request timeout on /api/orders\nDatabase query exceeded 5000ms threshold\nAffected endpoint: GET /api/orders?user_id=*\nQuery: SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC\nExecution time: 8200ms (normal: 45ms)\nDB CPU: 94% (normal: 20%)\nTable orders: 45M rows\nNo recent deployment\nAutovacuum last run: 12 days ago",
+    "expected_error_type": "SlowQueryTimeout",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB006",
+    "expected_root_cause_keywords": [
+      "slow",
+      "query",
+      "timeout",
+      "index",
+      "vacuum"
+    ],
+    "actual_error_type": "TimeoutError",
+    "actual_severity": "high",
+    "actual_confidence": 0.87,
+    "actual_root_cause": "A missing or degraded index on the `orders` table's `user_id` and/or `created_at` columns is causing a full or near-full table scan on 45 million rows, compounded by severe table bloat due to autovacuum not running for 12 days, resulting in query execution times 180x above baseline and 94% DB CPU utilization.",
+    "actual_summary": "The GET /api/orders endpoint began timing out due to a database query on the 45-million-row orders table taking 8.2 seconds instead of the normal 45ms, driving DB CPU to 94%. The most likely cause is an absent or degraded composite index on (user_id, created_at), forcing expensive table scans, heavily worsened by 12 days of accumulated table bloat from a missed autovacuum cycle. Immediate remediation should include manually triggering VACUUM ANALYZE on the orders table and verifying/rebuilding the appropriate index.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB006",
+        "title": "High Database Query Latency / Slow Queries",
+        "score": 0.637
+      },
+      {
+        "id": "RB014",
+        "title": "Data Pipeline Failure / ETL Job Error",
+        "score": 0.58
+      },
+      {
+        "id": "RB011",
+        "title": "Disk Space Exhaustion",
+        "score": 0.521
+      }
+    ],
+    "top_runbook_retrieved": "RB006",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The GET /api/orders endpoint is timing out because the orders table (45M rows, 12 days without autovacuum) is being scanned near-sequentially due to a missing or invalid composite index on (user_id, created_at DESC), driving DB CPU to 94% and query latency to 180x baseline. Immediately throttle the endpoint to stop the cascade, kill active long-running queries, run VACUUM ANALYZE on the orders table, and create the composite index concurrently before re-enabling traffic. Root-cause prevention requires investigating why autovacuum was suppressed for 12 days and enforcing mandatory query filtering on the orders endpoint.",
+    "postmortem_title": "PostgreSQL Query Timeout Outage \u2014 GET /api/orders Endpoint \u2014 2026-09-24",
+    "postmortem_action_items_count": 10,
+    "pipeline_duration_seconds": 99.7588107585907,
+    "error": null
+  },
+  {
+    "id": "inc009",
+    "tier": 2,
+    "title": "Kafka consumer lag growing",
+    "incident_log": "WARN 2026-09-24 09:30:15 [monitoring] Consumer group lag alert\nConsumer group: notification-consumer\nTopic: user-events\nCurrent lag: 245,000 messages (threshold: 10,000)\nLag growing at: 2,400 messages/minute\nConsumer pods: 2 running (normal: 5)\nRecent change: notification-service scaled down for maintenance at 09:00:00\nProducer rate: unchanged",
+    "expected_error_type": "MessageQueueBacklog",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB007",
+    "expected_root_cause_keywords": [
+      "kafka",
+      "consumer",
+      "lag",
+      "scaled down"
+    ],
+    "actual_error_type": "ConsumerGroupLagSpike",
+    "actual_severity": "high",
+    "actual_confidence": 0.95,
+    "actual_root_cause": "The notification-service consumer group is critically under-provisioned after a planned maintenance scale-down at 09:00:00 reduced consumer pods from 5 to 2, leaving insufficient capacity to keep pace with the unchanged producer rate on the user-events topic.",
+    "actual_summary": "The notification-service was scaled down from 5 to 2 consumer pods during a maintenance window at 09:00, reducing consumer throughput by approximately 60% while the upstream producer rate on the user-events Kafka topic remained constant. This imbalance caused the consumer group lag to balloon to 245,000 messages at a rate of 2,400 messages/minute. Immediate remediation should focus on restoring consumer pods to at least their normal count of 5 to drain the backlog and prevent further accumulation.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB007",
+        "title": "Message Queue Backlog / Consumer Lag",
+        "score": 0.646
+      },
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.498
+      },
+      {
+        "id": "RB004",
+        "title": "Redis Cache Connection Failure",
+        "score": 0.492
+      }
+    ],
+    "top_runbook_retrieved": "RB007",
+    "fix_actions_count": 5,
+    "fix_risk_level": "low",
+    "fix_summary": "The notification-service consumer group fell critically behind after a maintenance window incorrectly reduced consumer pods from 5 to 2 without adjusting producer throughput, causing a 245,000-message lag growing at 2,400 messages/minute on the user-events topic. The immediate fix is to scale the notification-consumer deployment back to 5 replicas to restore processing capacity and drain the backlog, with a temporary scale to 8-10 replicas if recovery is too slow. No offset reset or producer intervention is warranted at this stage given the known, reversible cause.",
+    "postmortem_title": "Kafka Consumer Group Lag Spike \u2014 notification-service / user-events \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 87.59566807746887,
+    "error": null
+  },
+  {
+    "id": "inc010",
+    "tier": 2,
+    "title": "JWT authentication failure across services",
+    "incident_log": "ERROR 2026-09-24 10:05:33 [api-gateway] JWT validation failed\njwt.exceptions.InvalidSignatureError: Signature verification failed\nAffected services: all authenticated endpoints\nError rate: 100% on /api/v2/protected/*\nRecent change: JWT secret rotated at 09:55:00 as part of security rotation\nauth-service updated at 09:55:00\napi-gateway not yet updated\npayment-service not yet updated",
+    "expected_error_type": "AuthenticationError",
+    "expected_severity": "critical",
+    "expected_top_runbook": "RB012",
+    "expected_root_cause_keywords": [
+      "jwt",
+      "signature",
+      "secret",
+      "rotation"
+    ],
+    "actual_error_type": "InvalidSignatureError",
+    "actual_severity": "critical",
+    "actual_confidence": 0.98,
+    "actual_root_cause": "The JWT secret was rotated in the auth-service at 09:55:00, but the api-gateway and payment-service were not updated with the new secret, causing 100% JWT signature validation failures on all authenticated endpoints.",
+    "actual_summary": "At 09:55:00, a JWT secret rotation was applied exclusively to the auth-service, leaving the api-gateway and payment-service with the old secret. This mismatch causes all tokens signed with the new secret to fail validation at the api-gateway, resulting in a 100% error rate across every authenticated endpoint. Immediate remediation requires either propagating the new secret to the api-gateway and payment-service, or temporarily rolling back the auth-service to the old secret while a coordinated rotation is planned.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB012",
+        "title": "Authentication Service / JWT Token Failure",
+        "score": 0.617
+      },
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.517
+      },
+      {
+        "id": "RB003",
+        "title": "API Gateway 502 Bad Gateway",
+        "score": 0.463
+      }
+    ],
+    "top_runbook_retrieved": "RB012",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "A JWT secret was rotated in auth-service at 09:55:00 without simultaneously updating api-gateway and payment-service, causing a 100% authentication failure across all protected endpoints. The fastest path to resolution is to roll back auth-service to the old secret, or \u2014 if rollback is not feasible \u2014 to immediately propagate the new secret to both api-gateway and payment-service and restart them in parallel. Security and engineering leads must be paged immediately per P1 protocol; under no circumstances should authentication be disabled as a workaround.",
+    "postmortem_title": "JWT Secret Rotation Outage \u2014 API Gateway / Auth Service / Payment Service \u2014 2026-09-24",
+    "postmortem_action_items_count": 9,
+    "pipeline_duration_seconds": 81.64377284049988,
+    "error": null
+  },
+  {
+    "id": "inc011",
+    "tier": 2,
+    "title": "Cascading timeout across microservices",
+    "incident_log": "ERROR 2026-09-24 15:22:44 [order-service] Upstream timeout\nHTTPError: 504 Gateway Timeout from inventory-service\norder-service thread pool: 98% utilized\nResponse times: order-service 8200ms, inventory-service 6100ms, pricing-service 5800ms\nAll services degraded simultaneously\nRoot alert: pricing-service CPU 99% starting at 15:18:00\nNo circuit breaker configured on any service",
+    "expected_error_type": " CascadingFailure",
+    "expected_severity": "high",
+    "expected_top_runbook": "RB013",
+    "expected_root_cause_keywords": [
+      "cascading",
+      "timeout",
+      "thread pool",
+      "circuit breaker"
+    ],
+    "actual_error_type": "TimeoutError",
+    "actual_severity": "critical",
+    "actual_confidence": 0.88,
+    "actual_root_cause": "pricing-service CPU saturation at 99% starting at 15:18:00 caused cascading latency across dependent services, with order-service thread pool exhaustion (98%) from blocked threads waiting on slow upstream calls propagating the failure chain.",
+    "actual_summary": "A CPU saturation event on pricing-service (99% CPU from 15:18:00) caused its response times to spike to 5800ms, which propagated upstream through inventory-service (6100ms) and into order-service (8200ms), ultimately triggering 504 Gateway Timeouts. The absence of circuit breakers on any service meant that no failure isolation existed, allowing pricing-service's degradation to exhaust the order-service thread pool (98% utilized) as threads piled up waiting for slow responses. The incident is critical because the entire order processing pipeline is effectively down and revenue impact is likely ongoing.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.744
+      },
+      {
+        "id": "RB012",
+        "title": "Authentication Service / JWT Token Failure",
+        "score": 0.534
+      },
+      {
+        "id": "RB003",
+        "title": "API Gateway 502 Bad Gateway",
+        "score": 0.528
+      }
+    ],
+    "top_runbook_retrieved": "RB013",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The immediate priority is to restart pricing-service to break the CPU saturation event that originated at 15:18:00, then restart order-service to flush the exhausted thread pool (98%) that is blocking all order processing. In parallel, enforce emergency gateway-level timeouts and circuit breaking on calls to pricing-service to prevent the cascade from recurring during stabilization, and scale pricing-service horizontally to absorb load. Once services are restarted and metrics normalize, a permanent fix must implement circuit breakers, bulkhead isolation, and per-call timeout budgets across all service-to-service calls to prevent this synchronous failure chain from repeating.",
+    "postmortem_title": "Cascading Multi-Service Outage \u2014 Order Processing Pipeline \u2014 2026-09-24",
+    "postmortem_action_items_count": 12,
+    "pipeline_duration_seconds": 104.78337287902832,
+    "error": null
+  },
+  {
+    "id": "inc012",
+    "tier": 2,
+    "title": "ETL pipeline failure due to schema change",
+    "incident_log": "ERROR 2026-09-24 02:15:09 [etl-pipeline] Transformation failed\nKeyError: 'customer_email_verified' not found in source record\nPipeline: customer-data-sync\nStep: transform_customer_records\nSource table: customers (updated schema yesterday)\nRecords processed: 12,450 of 890,000\nDashboard showing stale data from 23 hours ago\nScheduled run: daily at 02:00:00",
+    "expected_error_type": "DataPipelineError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB014",
+    "expected_root_cause_keywords": [
+      "etl",
+      "schema",
+      "pipeline",
+      "transform"
+    ],
+    "actual_error_type": "KeyError",
+    "actual_severity": "high",
+    "actual_confidence": 0.93,
+    "actual_root_cause": "A schema change to the source 'customers' table yesterday removed or renamed the 'customer_email_verified' column, which the ETL pipeline's transform_customer_records step expects, causing the pipeline to fail after processing only 12,450 of 890,000 records.",
+    "actual_summary": "The customer-data-sync ETL pipeline failed during its scheduled 02:00 run because the 'customer_email_verified' field referenced in the transform_customer_records step no longer exists in the source 'customers' table following a schema change made yesterday. Only 12,450 of 890,000 records were processed before the pipeline aborted, leaving the downstream dashboard displaying data that is now over 23 hours stale. The root cause is a lack of schema change coordination between the database team and the ETL pipeline, combined with no runtime schema validation or safe key-access handling in the transformation logic.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB014",
+        "title": "Data Pipeline Failure / ETL Job Error",
+        "score": 0.658
+      },
+      {
+        "id": "RB011",
+        "title": "Disk Space Exhaustion",
+        "score": 0.459
+      },
+      {
+        "id": "RB015",
+        "title": "CDN / Static Asset Serving Failure",
+        "score": 0.413
+      }
+    ],
+    "top_runbook_retrieved": "RB014",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The customer-data-sync ETL pipeline failed because the 'customer_email_verified' column was removed or renamed in the source 'customers' table without updating the transform_customer_records step, leaving 877,550 records unprocessed and the downstream dashboard 23+ hours stale. The immediate fix is to identify the exact schema change, patch the transformation logic to reference the correct column name or add safe key-access fallback handling, then trigger a full manual re-run of the pipeline. This is a medium-risk fix because the transformation code change is straightforward, but care must be taken to validate the semantic correctness of any null fallback for the email-verified field before re-processing all customer records.",
+    "postmortem_title": "ETL Pipeline Outage \u2014 customer-data-sync \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 88.72101783752441,
+    "error": null
+  },
+  {
+    "id": "inc013",
+    "tier": 3,
+    "title": "Intermittent 502s with no obvious cause",
+    "incident_log": "WARN 2026-09-24 20:10:55 [monitoring] Intermittent 502 errors detected\nError rate: 3.2% (threshold: 1%)\nAffected endpoints: random across /api/*\nPattern: errors appear in 30-second bursts every 8-10 minutes\nAll upstream services reporting healthy\nNo recent deployments in 72 hours\nLoad balancer health checks: passing\nNetwork latency: slightly elevated (avg +12ms vs baseline)\nTime of first occurrence: 19:45:00",
+    "expected_error_type": "IntermittentGatewayError",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB003",
+    "expected_root_cause_keywords": [
+      "intermittent",
+      "502",
+      "network",
+      "latency"
+    ],
+    "actual_error_type": "TimeoutError",
+    "actual_severity": "high",
+    "actual_confidence": 0.72,
+    "actual_root_cause": "A recurring background process, scheduled job, or garbage collection cycle is consuming significant resources every 8-10 minutes, causing 30-second bursts of 502 errors across all API endpoints due to upstream connection exhaustion or worker unavailability.",
+    "actual_summary": "The system is experiencing 30-second bursts of 502 errors every 8-10 minutes, affecting random API endpoints while all health checks report passing. This highly regular pattern strongly indicates a recurring scheduled job, cron task, or garbage collection event that periodically exhausts a critical resource (thread pool, connection pool, CPU) causing the upstream servers to temporarily refuse or drop connections. The slightly elevated network latency corroborates a resource saturation event rather than a pure network fault, and the absence of recent deployments suggests this may be caused by a growing workload or data volume affecting an existing scheduled process.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB001",
+        "title": "PostgreSQL Connection Refused",
+        "score": 0.578
+      },
+      {
+        "id": "RB004",
+        "title": "Redis Cache Connection Failure",
+        "score": 0.577
+      },
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.559
+      }
+    ],
+    "top_runbook_retrieved": "RB001",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The 30-second bursts of 502 errors every 8-10 minutes are almost certainly caused by a scheduled job, cron task, or GC event that periodically exhausts a critical shared resource (worker threads, connection pool, or CPU) on the upstream application servers, temporarily making them unavailable to the load balancer. The immediate priority is to identify the specific job through cron listings and real-time resource monitoring during the next burst window, then disable or reschedule it to stop the pattern \u2014 with a load balancer timeout adjustment as a secondary mitigation. No recent deployments and passing health checks between bursts confirm this is a resource contention issue that self-resolves, making job isolation the lowest-risk and highest-confidence fix path.",
+    "postmortem_title": "Intermittent 502 Burst Errors \u2014 API Gateway (/api/*) \u2014 2026-09-24",
+    "postmortem_action_items_count": 8,
+    "pipeline_duration_seconds": 107.45030188560486,
+    "error": null
+  },
+  {
+    "id": "inc014",
+    "tier": 3,
+    "title": "Memory growing slowly \u2014 not yet OOM",
+    "incident_log": "WARN 2026-09-24 17:55:12 [monitoring] Memory usage trending up\nService: recommendation-service\nMemory 7 days ago: 210Mi\nMemory today: 445Mi (limit: 512Mi)\nMemory growth rate: ~33Mi/day\nNo OOM kill yet\nNo recent deployments in 5 days\nGarbage collection logs: normal frequency\nHeap dump not yet captured",
+    "expected_error_type": "MemoryLeak",
+    "expected_severity": "medium",
+    "expected_top_runbook": "RB002",
+    "expected_root_cause_keywords": [
+      "memory",
+      "leak",
+      "growing",
+      "heap"
+    ],
+    "actual_error_type": "MemoryLeak",
+    "actual_severity": "high",
+    "actual_confidence": 0.82,
+    "actual_root_cause": "The recommendation-service is experiencing a steady memory leak, growing at approximately 33Mi/day over 7 days, with no recent deployments or abnormal GC activity to explain the increase, suggesting an application-level object retention or resource leak.",
+    "actual_summary": "The recommendation-service is steadily consuming more memory at ~33Mi/day, growing from 210Mi to 445Mi over 7 days, and will likely breach its 512Mi limit and trigger an OOM kill within approximately 2 days. Normal GC frequency suggests leaked objects are being held by strong references and are not eligible for collection, pointing to an application-level memory leak rather than a GC tuning issue. Immediate action should include capturing a heap dump and restarting the service as a short-term mitigation while the root cause is investigated.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB013",
+        "title": "Microservice Timeout / Cascading Failure",
+        "score": 0.552
+      },
+      {
+        "id": "RB014",
+        "title": "Data Pipeline Failure / ETL Job Error",
+        "score": 0.545
+      },
+      {
+        "id": "RB002",
+        "title": "Service OOM Kill / Memory Exhaustion",
+        "score": 0.525
+      }
+    ],
+    "top_runbook_retrieved": "RB013",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "The recommendation-service has a slow but steady memory leak (~33Mi/day) that will cause an OOM kill within approximately 2 days. The immediate priority is to capture a heap dump for root cause analysis, then perform a rolling restart to reset memory consumption, and temporarily increase the memory limit to 1Gi to extend the investigation window. The heap dump analysis will guide the permanent fix, which is likely an unbounded cache, unreleased resource handle, or strong-reference retention in application code given that normal GC activity is failing to reclaim the memory.",
+    "postmortem_title": "Memory Leak Incident \u2014 recommendation-service \u2014 2026-09-24",
+    "postmortem_action_items_count": 10,
+    "pipeline_duration_seconds": 101.10320281982422,
+    "error": null
+  },
+  {
+    "id": "inc015",
+    "tier": 3,
+    "title": "CDN serving stale assets after deployment",
+    "incident_log": "WARN 2026-09-24 11:45:33 [frontend-monitoring] Users reporting stale UI\nSymptom: Users seeing old version of checkout page after v4.2.0 deployment\nDeployment completed: 11:30:00\nCache invalidation triggered: yes, at 11:31:00\nCloudFront invalidation status: completed\nBut users in EU still seeing old assets\nAsset URLs: versioned (e.g. main.a3f9b2.js)\nCDN edge nodes: 47 globally\nEU edge propagation: potentially incomplete",
+    "expected_error_type": "CDNPropagationDelay",
+    "expected_severity": "low",
+    "expected_top_runbook": "RB015",
+    "expected_root_cause_keywords": [
+      "cdn",
+      "cache",
+      "propagation",
+      "stale"
+    ],
+    "actual_error_type": "CDNPropagationDelay",
+    "actual_severity": "high",
+    "actual_confidence": 0.78,
+    "actual_root_cause": "CloudFront cache invalidation has not fully propagated to EU edge nodes, causing EU users to receive stale versioned assets from the pre-v4.2.0 deployment despite the invalidation being marked as 'completed' at the global level.",
+    "actual_summary": "After the v4.2.0 frontend deployment, EU users are still seeing the old checkout page because CloudFront cache invalidation has not fully propagated to EU edge nodes, despite the invalidation job reporting as completed. Since asset URLs are versioned by content hash, the most likely scenario is that the HTML entry point is also stale, causing browsers to request old asset hashes that EU edges are still serving from cache. The issue is isolated to EU CDN edge nodes and will require either a forced re-invalidation targeting EU PoPs specifically or waiting for full propagation, alongside immediate investigation of per-edge cache headers.",
+    "runbooks_retrieved": [
+      {
+        "id": "RB015",
+        "title": "CDN / Static Asset Serving Failure",
+        "score": 0.665
+      },
+      {
+        "id": "RB012",
+        "title": "Authentication Service / JWT Token Failure",
+        "score": 0.5
+      },
+      {
+        "id": "RB009",
+        "title": "Deployment Rollback Procedure",
+        "score": 0.486
+      }
+    ],
+    "top_runbook_retrieved": "RB015",
+    "fix_actions_count": 5,
+    "fix_risk_level": "medium",
+    "fix_summary": "EU CloudFront edge nodes are serving stale pre-v4.2.0 checkout assets despite the invalidation job reporting completion, because CloudFront's 'Completed' status does not guarantee synchronization across all EU PoPs. The immediate priority is to issue a new targeted cache invalidation scoped to HTML entry points and JS/CSS bundles, apply a no-cache header override on the S3 HTML origin as a bridge mitigation, and actively probe EU edge nodes to confirm propagation \u2014 rather than relying on the CloudFront invalidation status API. If EU users remain impacted beyond 20 minutes, initiate a full v4.1.x rollback to restore service while the CDN propagation issue is investigated.",
+    "postmortem_title": "CloudFront CDN Propagation Failure \u2014 EU Checkout Page \u2014 2026-09-24",
+    "postmortem_action_items_count": 7,
+    "pipeline_duration_seconds": 101.40493702888489,
+    "error": null
+  }
+]
