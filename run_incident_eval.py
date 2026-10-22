@@ -23,6 +23,22 @@ CSV_OUT = Path("evals/results/incident_eval_results.csv")
 SUMMARY_OUT = Path("evals/results/incident_eval_summary.json")
 
 SEVERITY_ORDER = ["low", "medium", "high", "critical"]
+
+# Ground-truth category derived from the expected runbook (defined from the runbook
+# library up front, not from model outputs). Must match CATEGORIES in diagnostics_agent.py.
+RUNBOOK_CATEGORY = {
+    "RB001": "database", "RB006": "database",
+    "RB002": "resource_exhaustion", "RB011": "resource_exhaustion",
+    "RB003": "network_gateway", "RB015": "network_gateway",
+    "RB004": "cache",
+    "RB005": "orchestration",
+    "RB007": "messaging",
+    "RB008": "security", "RB012": "security",
+    "RB009": "deployment",
+    "RB010": "external_dependency",
+    "RB013": "cascading",
+    "RB014": "data_pipeline",
+}
 STOPWORDS = {"error", "failure", "issue", "problem", "the", "and", "of"}
 
 
@@ -43,6 +59,13 @@ def score_error_type(actual, expected):
     if split_words(actual) & split_words(expected):
         return 1, "partial"
     return 0, "miss"
+
+
+def score_category(actual, expected_runbook):
+    exp = RUNBOOK_CATEGORY.get(expected_runbook)
+    if exp is None or not actual:
+        return None, exp   # not scorable (e.g. outputs from before the category field existed)
+    return int(actual.strip().lower() == exp), exp
 
 
 def score_severity(actual, expected):
@@ -79,6 +102,7 @@ def score_all(dataset, outputs):
                          "error": (o or {}).get("error", "missing output")})
             continue
         et, et_kind = score_error_type(o.get("actual_error_type"), item["expected_error_type"])
+        cat, cat_exp = score_category(o.get("actual_category"), item["expected_top_runbook"])
         sev, sev_adj, sev_dir = score_severity(o.get("actual_severity"), item["expected_severity"])
         t1, t3 = score_runbook(o.get("runbooks_retrieved"), item["expected_top_runbook"])
         kw = score_keywords(o.get("actual_root_cause"), item.get("expected_root_cause_keywords", []))
@@ -87,6 +111,8 @@ def score_all(dataset, outputs):
             "expected_error_type": item["expected_error_type"].strip(),
             "actual_error_type": o.get("actual_error_type"),
             "error_type_score": et, "error_type_match": et_kind,
+            "expected_category": cat_exp, "actual_category": o.get("actual_category"),
+            "category_score": cat,
             "expected_severity": item["expected_severity"], "actual_severity": o.get("actual_severity"),
             "severity_exact": sev, "severity_adjacent": sev_adj, "severity_direction": sev_dir,
             "expected_runbook": item["expected_top_runbook"], "top_runbook": o.get("top_runbook_retrieved"),
@@ -110,6 +136,8 @@ def summarize(rows):
             "n": len(rs),
             "error_type_acc": mean(r["error_type_score"] for r in rs),
             "error_type_exact": mean(r["error_type_match"] == "exact" for r in rs),
+            "category_acc": (mean(r["category_score"] for r in rs if r["category_score"] is not None)
+                             if any(r["category_score"] is not None for r in rs) else None),
             "severity_exact": mean(r["severity_exact"] for r in rs),
             "severity_adjacent": mean(r["severity_adjacent"] for r in rs),
             "severity_over_rated": sum(r["severity_direction"] == "over" for r in rs),
@@ -156,6 +184,8 @@ def print_report(s):
     print(f"INCIDENT COPILOT EVAL  ({s['total']} incidents, {s['errors']} errors)")
     print("=" * 60)
     print(f"Error type accuracy   : {pct(o['error_type_acc'])}  (exact {pct(o['error_type_exact'])})")
+    if o.get("category_acc") is not None:
+        print(f"Category accuracy     : {pct(o['category_acc'])}")
     print(f"Severity exact        : {pct(o['severity_exact'])}")
     print(f"Severity within 1     : {pct(o['severity_adjacent'])}")
     print(f"  over / under rated  : {o['severity_over_rated']} / {o['severity_under_rated']}")
