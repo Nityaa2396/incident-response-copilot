@@ -95,3 +95,41 @@ The first runbook search indexes the 15 runbooks into Qdrant automatically. Run 
 ### Note on free-tier Qdrant
 
 Free Qdrant Cloud clusters are suspended after a period of inactivity. If the app reports a connection error, resume the cluster from the Qdrant dashboard and, if it was recreated empty, re-index the runbooks.
+
+## Evaluation
+
+The pipeline was evaluated on 15 synthetic incidents in three difficulty tiers: 7 clear-cut, 5 moderately ambiguous and 3 multi-cause or vague. Each has an expected error type, severity, top runbook and root-cause keywords. Scoring is deterministic code, not an LLM judge.
+
+### Results
+
+| Metric | v1 | v2 |
+|---|---|---|
+| Error type accuracy (exact) | 53.3% (33.3%) | 66.7% (26.7%) |
+| Category accuracy | not measured | 80.0% |
+| Severity exact | 26.7% | 40.0% |
+| Severity within one level | 93.3% | 100% |
+| Severity over / under rated | 11 / 0 | 8 / 1 |
+| Runbook top-1 | 73.3% | 86.7% |
+| Runbook top-3 | 93.3% | 93.3% |
+| Root-cause keywords | 65.7% | 61.0% |
+
+v2 added the category taxonomy and the severity rubric. The error-type gain comes from partial matches, and exact matches fell, so category accuracy is the better headline. Category has no v1 baseline.
+
+### Findings
+
+- **Retrieval errors came from diagnosis.** Both remaining top-1 misses trace to a wrong category from the Diagnostics agent. The search answered a wrong query correctly. Improving the retriever would not have fixed either one.
+- **Severity is better calibrated, not solved.** Every severity is within one level of the label, but the model still tends to rate incidents higher than the labels do. Severity labels are subjective, so exact-match accuracy should be read with care.
+- **Similarity score does not detect wrong matches.** Wrong top-1 retrievals scored inside the range of correct ones. A lower threshold does separate incidents with no matching runbook: in a small out-of-scope test, 4 of 5 scored below every in-scope incident.
+
+### Limitations of the evaluation
+
+15 incidents and a single run per version is a small sample (one incident is 6.7 points), and the incidents are synthetic. The out-of-scope set was chosen by the author and the threshold was set on the same data. Treat the numbers as indicative.
+
+Full write-up with methodology and caveats: [docs/incident_eval_case_study.md](docs/incident_eval_case_study.md).
+
+### Reproduce
+
+```bash
+python run_incident_baseline.py   # about 25 minutes, 4 API calls per incident
+python run_incident_eval.py       # scores the saved outputs
+```
