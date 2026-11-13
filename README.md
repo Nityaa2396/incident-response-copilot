@@ -133,3 +133,37 @@ Full write-up with methodology and caveats: [docs/incident_eval_case_study.md](d
 python run_incident_baseline.py   # about 25 minutes, 4 API calls per incident
 python run_incident_eval.py       # scores the saved outputs
 ```
+
+## Known limitations
+
+- Runbook coverage is 15 incident types. Incidents outside them get the closest match, with a warning only when the match is clearly weak.
+- A wrong diagnosis carries into every later stage. There is no independent check on the category before it drives retrieval. This is the first planned improvement.
+- The evaluation set is small and synthetic, and results come from single runs.
+- The weak-match threshold (0.55) is a starting point that should be re-validated on a larger, independently written set.
+- Each full pipeline run takes roughly 90 seconds because it makes four model calls in sequence.
+
+## Repository layout
+
+```
+app.py                          Streamlit interface
+src/
+  config.py                     Secrets from Streamlit or environment
+  diagnostics_agent.py          Agent 1: diagnosis and category
+  runbook_search_agent.py       Agent 2: Voyage + Qdrant retrieval
+  fix_recommendation_agent.py   Agent 3: ranked fix plan
+  postmortem_agent.py           Agent 4: postmortem draft
+  orchestrator.py               Runs the pipeline, builds the trace
+  runbooks.json                 15 runbooks
+evals/
+  eval_incidents.json           15 labelled incidents
+  results/                      Saved outputs and scores
+run_incident_baseline.py        Runs all incidents through the pipeline
+run_incident_eval.py            Scores the outputs
+analyze_threshold.py            Retrieval-confidence analysis
+run_ood_retrieval.py            Out-of-scope retrieval test
+docs/incident_eval_case_study.md
+```
+
+## Related project
+
+[PolicyCopilot](https://github.com/Nityaa2396/ai-policy-copilot): a policy question-answering tool with its own retrieval evaluation (full-document prompting versus semantic chunked retrieval).
