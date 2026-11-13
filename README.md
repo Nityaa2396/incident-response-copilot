@@ -51,3 +51,47 @@ Postmortem Agent         -> timeline, root cause, action items, lessons
 - **Impact-based severity rubric.** Severity reflects the impact shown in the log, not worst-case potential, and the model is told to ignore log-level labels such as `CRITICAL:` in the text.
 - **Weak-match warning.** If the best runbook match scores below 0.55 (similarity), the pipeline warns that no runbook closely matches and proceeds with general reasoning. See the case study for how this threshold was set and how far to trust it.
 - **Pipeline trace.** Each stage's results are recorded and shown in the app.
+
+## Setup and usage
+
+### Requirements
+
+- Python 3.12 (recommended)
+- API keys for Anthropic and Voyage AI, and a Qdrant Cloud cluster (the free tier works)
+
+### Install
+
+```bash
+git clone https://github.com/Nityaa2396/incident-response-copilot
+cd incident-response-copilot
+pip install -r requirements.txt
+```
+
+### Configure
+
+Create a `.env` file in the project root (it is gitignored):
+
+```
+ANTHROPIC_API_KEY=...
+QDRANT_URL=...
+QDRANT_API_KEY=...
+VOYAGE_API_KEY=...
+```
+
+When deployed on Streamlit Cloud, put the same four values in the app's Secrets settings as top-level `KEY = "value"` lines. Locally, `.streamlit/secrets.toml` also works and is gitignored. Never commit keys.
+
+### Run
+
+```bash
+# Web app
+streamlit run app.py
+
+# Single-agent smoke test
+python -m src.diagnostics_agent
+```
+
+The first runbook search indexes the 15 runbooks into Qdrant automatically. Run modules with `python -m src.<module>` from the project root.
+
+### Note on free-tier Qdrant
+
+Free Qdrant Cloud clusters are suspended after a period of inactivity. If the app reports a connection error, resume the cluster from the Qdrant dashboard and, if it was recreated empty, re-index the runbooks.
